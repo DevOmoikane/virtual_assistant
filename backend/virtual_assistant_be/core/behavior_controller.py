@@ -22,6 +22,7 @@ from virtual_assistant_be.services.stt_service import SttService
 from virtual_assistant_be.services.tts_service import TtsService
 from virtual_assistant_be.services.camera_service import CameraService
 from virtual_assistant_be.services.audio_service import AudioService
+from virtual_assistant_be.services.memory_service import MemoryService
 
 SendFn = Callable[[dict], Awaitable[None]]
 
@@ -39,6 +40,7 @@ class BehaviorController:
         self.tts = TtsService()
         self.camera = CameraService(event_callback=self._on_camera_event)
         self.audio = AudioService(audio_callback=self._on_audio_chunk)
+        self.memory = MemoryService()
 
     async def _run_in_executor(self, fn, *args):
         loop = asyncio.get_running_loop()
@@ -59,11 +61,13 @@ class BehaviorController:
                 await self._on_gesture(data)
 
     async def _on_person_appeared(self) -> None:
+        await self._run_in_executor(self.memory.store_person_event, "appeared")
         await self.send_animation("greet")
         await self._run_in_executor(self.tts.speak, "Hello there!")
         await self._send_speak("Hello there!")
 
     async def _on_person_disappeared(self) -> None:
+        await self._run_in_executor(self.memory.store_person_event, "disappeared")
         await self.send_animation("idle")
         await self._send(serialize(StateUpdate(connected=True)))
 
@@ -133,6 +137,7 @@ class BehaviorController:
                 log.info("LLM response: %s", response[:100])
                 await self._send_speak(response)
                 await self._run_in_executor(self.tts.speak, response)
+                await self._run_in_executor(self.memory.store_interaction, text, response)
 
             anim = self.llm.decide_animation(text, resolved_intent)
             await self.send_animation(anim)

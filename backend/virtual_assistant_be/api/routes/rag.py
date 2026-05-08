@@ -3,11 +3,14 @@ from __future__ import annotations
 import os
 import tempfile
 
+import requests
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from virtual_assistant_be.core.config import settings
 from virtual_assistant_be.services.rag_service import RagService
+from virtual_assistant_be.services.memory_service import MemoryService
 from virtual_assistant_be.services.file_parser import extract_text, SUPPORTED_EXTENSIONS
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
@@ -26,6 +29,7 @@ async def rag_tools_page():
         return HTMLResponse("<h1>Template not found</h1>", status_code=404)
 
 rag = RagService()
+memory = MemoryService()
 
 
 class IngestRequest(BaseModel):
@@ -74,12 +78,40 @@ async def ingest_file(file: UploadFile = File(...)):
         os.unlink(tmp.name)
 
 
+@router.get("/memory/person-count")
+async def person_count():
+    return {"person_count": memory.get_person_count()}
+
+
 @router.post("/ask")
 async def ask(req: AskRequest):
-    answer = rag.ask(req.query)
-    if not answer:
-        docs = rag.retrieve(req.query)
-        if not docs:
-            return {"answer": "", "context": []}
-        return {"answer": "", "context": docs}
-    return {"answer": answer, "context": []}
+    memory_docs = memory.search(req.query, k=3)
+    doc_docs = rag.retrieve(req.query, k=3)
+
+    all_context = []
+    seen = set()
+    for d in memory_docs + doc_docs:
+        if d not in seen:
+            seen.add(d)
+            all_context.append(d)
+
+    if not all_context:
+        return {"answer": "", "context": []}
+
+    prompt = (
+        f"Only answer using the context below. If the answer is not in the context, say you don't know.\n\n"
+        f"Context:\n{''.join(all_context)}\n\n"
+        f"Question: {req.query}"
+    )
+
+    try:
+        resp = requests.post(
+            f"{settings.ollama_url}/api/generate",
+            json={"model": settings.ollama_gen_model, "prompt": prompt, "stream": False},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        answer = resp.json()["response"]
+        return {"answer": answer, "context": all_context}
+    except Exception:
+        return {"answer": "", "context": all_context}

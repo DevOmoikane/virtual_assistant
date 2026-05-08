@@ -26,10 +26,20 @@
   .result pre { white-space: pre-wrap; margin: 0; }
   .status { font-size: 13px; color: #666; margin-top: 6px; }
   .section-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #333; }
+  .stats { display: flex; gap: 20px; flex-wrap: wrap; }
+  .stat { font-size: 14px; color: #555; }
+  .stat strong { font-size: 24px; color: #4f46e5; display: block; }
 </style>
 </head>
 <body>
   <h1>RAG Tools</h1>
+
+  <div class="card">
+    <div class="section-title">Memory Stats</div>
+    <div class="stats">
+      <div class="stat"><strong id="person-count">?</strong>People seen</div>
+    </div>
+  </div>
 
   <div class="card">
     <div class="section-title">Ingest Document</div>
@@ -131,6 +141,15 @@ async function ask() {
 }
 
 function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/rag/memory/person-count');
+    const d = await r.json();
+    document.getElementById('person-count').textContent = d.person_count;
+  } catch(e) {}
+}
+loadStats();
 </script>
 </body>
 </html>
