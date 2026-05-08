@@ -13,5 +13,7 @@ dependencies = [
     "sounddevice",
     "numpy",
     "requests",
-    "piper-tts"
+    "piper-tts",
+    "opencv-python",
+    "mediapipe"
 ]

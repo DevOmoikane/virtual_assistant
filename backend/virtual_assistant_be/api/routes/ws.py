@@ -62,6 +62,7 @@ async def websocket_endpoint(websocket: WebSocket):
         log.exception("WebSocket error")
     finally:
         _connected = False
+        await controller._cleanup()
         try:
             await websocket.close()
         except Exception:

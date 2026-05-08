@@ -4,27 +4,100 @@ import asyncio
 import logging
 from typing import Callable, Awaitable
 
-from virtual_assistant_be.core.protocol import GoEvent, GoCommand, AnimationCmd, StateUpdate, serialize
+import numpy as np
+
+from virtual_assistant_be.core.protocol import (
+    GoEvent,
+    GoCommand,
+    AnimationCmd,
+    StateUpdate,
+    SpeakCmd,
+    ListenIndicator,
+    ThinkIndicator,
+    serialize,
+)
 from virtual_assistant_be.services.llm_service import LlmService
 from virtual_assistant_be.services.rag_service import RagService
+from virtual_assistant_be.services.stt_service import SttService
 from virtual_assistant_be.services.tts_service import TtsService
+from virtual_assistant_be.services.camera_service import CameraService
+from virtual_assistant_be.services.audio_service import AudioService
 
 SendFn = Callable[[dict], Awaitable[None]]
 
 log = logging.getLogger(__name__)
 
+_GREETING = "Hello! I'm ready to help."
+
 
 class BehaviorController:
     def __init__(self, send_fn: SendFn | None = None) -> None:
         self._send: SendFn | None = send_fn
-        self._executor = asyncio.get_event_loop().run_in_executor
+        self._loop = asyncio.get_event_loop()
+        self._executor = self._loop.run_in_executor
 
         self.llm = LlmService()
         self.rag = RagService()
+        self.stt = SttService()
         self.tts = TtsService()
+        self.camera = CameraService(event_callback=self._on_camera_event)
+        self.audio = AudioService(audio_callback=self._on_audio_chunk)
 
     def set_send_fn(self, send_fn: SendFn) -> None:
         self._send = send_fn
+
+    async def _on_camera_event(self, event: str, data: dict) -> None:
+        log.debug("Camera event: %s %s", event, data)
+
+        match event:
+            case "person_appeared":
+                await self._on_person_appeared()
+            case "person_disappeared":
+                await self._on_person_disappeared()
+            case "gesture_detected":
+                await self._on_gesture(data)
+
+    async def _on_person_appeared(self) -> None:
+        await self.send_animation("greet")
+        await self._executor(None, self.tts.speak, "Hello there!")
+        await self._send_speak("Hello there!")
+
+    async def _on_person_disappeared(self) -> None:
+        await self.send_animation("idle")
+        await self._send(serialize(StateUpdate(connected=True)))
+
+    async def _on_gesture(self, data: dict) -> None:
+        gesture = data.get("gesture", "")
+        match gesture:
+            case "wave":
+                await self.send_animation("greet")
+                await self._executor(None, self.tts.speak, "I see you waving!")
+                await self._send_speak("I see you waving!")
+            case "thumbs_up":
+                await self.send_animation("nod")
+                await self._executor(None, self.tts.speak, "Got it!")
+                await self._send_speak("Got it!")
+            case "open_palm":
+                await self.send_animation("listen")
+            case "point":
+                await self.send_animation("think")
+            case "fist":
+                await self.send_animation("surprised")
+            case _:
+                pass
+
+    async def _on_audio_chunk(self, audio: np.ndarray) -> None:
+        await self._send_listen(True)
+        try:
+            text = await self._executor(None, self.stt.transcribe, audio)
+            text = text.strip()
+            if text:
+                log.info("STT: %s", text)
+                await self.handle_text(text)
+        except Exception:
+            log.exception("Audio transcription failed")
+        finally:
+            await self._send_listen(False)
 
     async def handle_event(self, msg: GoEvent) -> None:
         log.info("Event from Godot: %s %s", msg.name, msg.params)
@@ -34,9 +107,9 @@ class BehaviorController:
 
         match msg.name:
             case "ready":
-                await self._greet()
+                await self._on_ready()
             case "shutdown":
-                await self._shutdown()
+                await self._on_shutdown()
             case _:
                 log.warning("Unknown command: %s", msg.name)
 
@@ -61,27 +134,30 @@ class BehaviorController:
                 await self._executor(None, self.tts.speak, response)
 
             anim = self.llm.decide_animation(text, resolved_intent)
-            await self._send_animation(anim)
+            await self.send_animation(anim)
         except Exception:
             log.exception("handle_text failed")
         finally:
             await self._send_think(False)
 
-    async def _greet(self) -> None:
-        if self._send is None:
-            return
-        await self._send(serialize(AnimationCmd(name="greet")))
+    async def _on_ready(self) -> None:
+        await self.send_animation("greet")
         await self._send(serialize(StateUpdate(connected=True)))
+        await self._executor(None, self.tts.speak, _GREETING)
+        await self._send_speak(_GREETING)
 
-        greeting = "Hello! I'm ready to help."
-        self._executor(None, self.tts.speak, greeting)
-        await self._send_speak(greeting)
-        await self._send_think(False)
+        self.camera.start(self._loop)
+        self.audio.start(self._loop)
 
-    async def _shutdown(self) -> None:
-        log.info("Shutting down services")
+    async def _on_shutdown(self) -> None:
+        log.info("Shutting down")
+        await self._cleanup()
         if self._send:
             await self._send(serialize(StateUpdate(connected=False)))
+
+    async def _cleanup(self) -> None:
+        self.camera.stop()
+        self.audio.stop()
 
     async def send_state(self, **kwargs) -> None:
         if self._send:
@@ -93,10 +169,12 @@ class BehaviorController:
 
     async def _send_speak(self, text: str) -> None:
         if self._send:
-            from virtual_assistant_be.core.protocol import SpeakCmd
             await self._send(serialize(SpeakCmd(text=text)))
 
     async def _send_think(self, active: bool) -> None:
         if self._send:
-            from virtual_assistant_be.core.protocol import ThinkIndicator
             await self._send(serialize(ThinkIndicator(active=active)))
+
+    async def _send_listen(self, active: bool) -> None:
+        if self._send:
+            await self._send(serialize(ListenIndicator(active=active)))
