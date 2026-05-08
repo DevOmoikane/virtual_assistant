@@ -1,6 +1,6 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://6jfixh2xgkdt"]
 
-[ext_resource type="Shader" uid="uid://3s2xxmuutjg8" path="res://assets/shaders/hologram.gdshader" id="1_fus6n"]
+[ext_resource type="Shader" uid="uid://3s2xxmuutjg8" path="res://shaders/shaderlib/hologram.gdshader" id="1_fus6n"]
 
 [resource]
 render_priority = 0

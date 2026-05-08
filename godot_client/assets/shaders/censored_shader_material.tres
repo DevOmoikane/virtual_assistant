@@ -1,6 +1,6 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://27jv157x2ar6"]
 
-[ext_resource type="Shader" uid="uid://kcus1v6hy42u" path="res://assets/shaders/censored.gdshader" id="1_e5pwi"]
+[ext_resource type="Shader" uid="uid://kcus1v6hy42u" path="res://shaders/shaderlib/censored.gdshader" id="1_e5pwi"]
 
 [resource]
 render_priority = 0
