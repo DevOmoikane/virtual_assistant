@@ -238,3 +238,5 @@ data_*/
 mono_crash.*.json
 
 .history/
+
+backend/chroma-data/

@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://c1dqqk0pnvax1"]
 
 [ext_resource type="PackedScene" uid="uid://bfvph0kamg4tj" path="res://assets/characters/carlitos.tscn" id="1_4tn4g"]
+[ext_resource type="Script" uid="uid://dafgm86wolfa" path="res://scripts/lobby_scene.gd" id="1_g76d4"]
 [ext_resource type="Script" uid="uid://cwxhpoutcafpk" path="res://scripts/websocket.gd" id="2_g76d4"]
 
 [sub_resource type="Environment" id="Environment_d4cga"]
@@ -10,6 +11,7 @@ ambient_light_color = Color(1, 1, 1, 1)
 ambient_light_energy = 0.35
 
 [node name="LobbyScene" type="Node3D" unique_id=395000254]
+script = ExtResource("1_g76d4")
 
 [node name="Carlitos" parent="." unique_id=1893086835 instance=ExtResource("1_4tn4g")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.016605496, 0, 0.05174446)

@@ -1,0 +1,12 @@
+[project]
+name = "faster-whisper-realtime"
+version = "0.1.0"
+description = "Real-time command detection using faster-whisper"
+requires-python = "==3.12.*"
+dependencies = [
+    "faster-whisper",
+    "sounddevice",
+    "numpy",
+    "requests",
+    "piper-tts",
+]

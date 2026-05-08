@@ -1,11 +1,11 @@
 extends Node
 
-@export var websocket_url: String = "ws://localhost:5500"
+@export var websocket_url: String = "ws://localhost:5000"
 @export var character: Character
 
 
 # Our WebSocketClient instance.
-var socket = WebSocketPeer.new()
+var socket: WebSocketPeer = WebSocketPeer.new()
 
 
 func _ready():
@@ -37,10 +37,10 @@ func _process(_delta):
 	if state == WebSocketPeer.STATE_OPEN:
 		while socket.get_available_packet_count():
 			var packet = socket.get_packet()
+			# send as signal
 			if socket.was_string_packet():
 				var packet_text = packet.get_string_from_utf8()
 				print("< Got text data from server: %s" % packet_text)
-				character.execute_action(packet_text)
 			else:
 				print("< Got binary data from server: %d bytes" % packet.size())
 
