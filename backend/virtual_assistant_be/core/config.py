@@ -35,5 +35,7 @@ class Settings:
     face_detection_model: str = os.path.join(_MODELS_DIR, "blaze_face_short_range.tflite")
     gesture_recognition_model: str = os.path.join(_MODELS_DIR, "gesture_recognizer.task")
 
+    telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
 
 settings = Settings()

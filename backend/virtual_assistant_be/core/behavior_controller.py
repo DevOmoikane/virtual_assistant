@@ -25,6 +25,7 @@ from virtual_assistant_be.services.camera_service import CameraService
 from virtual_assistant_be.services.audio_service import AudioService
 from virtual_assistant_be.services.memory_service import MemoryService
 from virtual_assistant_be.services.command_service import CommandService
+from virtual_assistant_be.services.telegram_service import TelegramService
 
 SendFn = Callable[[dict], Awaitable[None]]
 
@@ -43,7 +44,9 @@ class BehaviorController:
         self.camera = CameraService(event_callback=self._on_camera_event)
         self.audio = AudioService(audio_callback=self._on_audio_chunk)
         self.memory = MemoryService()
-        self.commands = CommandService()
+        self.telegram = TelegramService()
+        self.commands = CommandService(telegram_service=self.telegram)
+        self.telegram.set_message_callback(self._on_telegram_message)
 
     async def _run_in_executor(self, fn, *args):
         loop = asyncio.get_running_loop()
@@ -93,6 +96,13 @@ class BehaviorController:
                 await self.send_animation("surprised")
             case _:
                 pass
+
+    async def _on_telegram_message(self, sender: str, text: str, chat_id: int) -> None:
+        log.info("Telegram from %s: %s", sender, text)
+        if self._send:
+            msg = f"Message from {sender} on Telegram: {text}"
+            await self._send_speak(msg)
+            await self._run_in_executor(self.tts.speak, msg)
 
     async def _on_audio_chunk(self, audio: np.ndarray) -> None:
         await self._send_listen(True)
@@ -163,7 +173,7 @@ class BehaviorController:
                     result = self.commands.execute_door(cmd.get("action", "toggle"))
                 case "send_message":
                     result = self.commands.execute_send_message(
-                        cmd.get("action", ""), cmd.get("message", ""),
+                        cmd.get("action", ""), cmd.get("message", ""), cmd.get("contact", ""),
                     )
                 case "home_assistant":
                     result = self.commands.execute_home_assistant(cmd.get("command", ""))
@@ -193,6 +203,7 @@ class BehaviorController:
         loop = asyncio.get_running_loop()
         self.camera.start(loop)
         self.audio.start(loop)
+        await self._run_in_executor(self.telegram.start_polling)
 
     async def _on_shutdown(self) -> None:
         log.info("Shutting down")
@@ -203,6 +214,7 @@ class BehaviorController:
     async def _cleanup(self) -> None:
         self.camera.stop()
         self.audio.stop()
+        await self._run_in_executor(self.telegram.stop_polling)
 
     async def send_state(self, **kwargs) -> None:
         if self._send:

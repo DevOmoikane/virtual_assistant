@@ -74,9 +74,10 @@ Question: {prompt}"""
     def classify_device_command(self, text: str) -> dict | None:
         system = (
             "You extract device commands from user input. "
-            "Respond with a JSON object with keys 'device', 'action', and optionally 'message'/'platform'/'command'. "
+            "Respond with a JSON object with keys 'device', 'action', and optionally 'message'/'contact'/'command'. "
             "Devices: lights (actions: on/off/toggle), door (actions: open/close), "
-            "send_message (actions: platform like discord/whatsapp/telegram, with 'message' field), "
+            "send_message (actions: platform like telegram/discord/whatsapp, "
+            "with 'contact' (recipient name) and 'message' fields), "
             "home_assistant (with 'command' field containing the raw command). "
             "If no device command is detected, respond with an empty JSON object {}."
             "Reply with ONLY the JSON, no other text."

@@ -55,6 +55,7 @@ class TestBehaviorController:
             patch.object(controller, "_send_speak") as mock_speak,
             patch.object(controller, "send_animation") as mock_anim,
             patch.object(controller.llm, "classify_intent", return_value="question"),
+            patch.object(controller.llm, "classify_device_command", return_value=None),
             patch.object(controller.rag, "retrieve", return_value=["doc1"]),
             patch.object(controller.llm, "generate_response", return_value=("The answer is 42.", "question")),
             patch.object(controller.tts, "speak"),
@@ -122,6 +123,7 @@ class TestBehaviorController:
             patch.object(controller, "_send_speak"),
             patch.object(controller, "send_animation"),
             patch.object(controller.llm, "classify_intent", return_value=""),
+            patch.object(controller.llm, "classify_device_command", return_value=None),
             patch.object(controller.llm, "generate_response", return_value=("", "other")),
             patch.object(controller.tts, "speak"),
         ):
