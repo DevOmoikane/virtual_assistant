@@ -88,6 +88,16 @@ async def recent_events(n: int = 10):
     return {"events": memory.get_recent_events(n=n)}
 
 
+@router.get("/memory/visits/stats")
+async def visit_stats():
+    return memory.get_visit_stats()
+
+
+@router.get("/memory/visits/recent")
+async def recent_visits(n: int = 10):
+    return {"visits": memory.get_recent_visits(n=n)}
+
+
 @router.post("/ask")
 async def ask(req: AskRequest):
     memory_docs = memory.search(req.query, k=3)

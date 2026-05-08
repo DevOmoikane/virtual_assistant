@@ -53,6 +53,17 @@
   </div>
 
   <div class="card">
+    <div class="section-title">Visit Stats</div>
+    <div class="stats">
+      <div class="stat"><strong id="total-visits">?</strong>Total visits</div>
+      <div class="stat"><strong id="today-visits">?</strong>Today</div>
+      <div class="stat"><strong id="avg-duration">-</strong>Avg duration</div>
+      <div class="stat"><strong id="active-visit">-</strong>Active</div>
+    </div>
+    <div class="timeline" id="visits-timeline"></div>
+  </div>
+
+  <div class="card">
     <div class="section-title">Ingest Document</div>
     <label for="source">Source name</label>
     <input type="text" id="source" placeholder="e.g. my_document.txt" value="manual">
@@ -161,7 +172,47 @@ function fmtTime(ts) {
 
 function fmtDuration(s) {
   if (!s) return '';
-  return s >= 60 ? `${Math.round(s/60)}m` : `${s}s`;
+  return s >= 60 ? `${Math.round(s/60)}m ${Math.round(s%60)}s` : `${s}s`;
+}
+
+function fmtDate(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString([], {month:'short', day:'numeric'});
+}
+
+function fmtFullTime(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+
+async function loadVisitStats() {
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch('/api/rag/memory/visits/stats'),
+      fetch('/api/rag/memory/visits/recent?n=10')
+    ]);
+    const s = await r1.json();
+    const rv = await r2.json();
+
+    document.getElementById('total-visits').textContent = s.total_visits;
+    document.getElementById('today-visits').textContent = s.today_visits;
+    document.getElementById('avg-duration').textContent = s.average_duration_s ? fmtDuration(s.average_duration_s) : '-';
+    document.getElementById('active-visit').textContent = s.active_visit ? 'Yes' : 'No';
+
+    const visits = rv.visits || [];
+    const tl = document.getElementById('visits-timeline');
+    tl.innerHTML = visits.map(v => {
+      const dur = v.duration_s ? fmtDuration(v.duration_s) : 'in progress';
+      return `<div class="tl-item">
+        <span class="tl-ts">${fmtDate(v.start_time)}</span>
+        <span class="tl-badge badge-person_event" style="background:#e0e7ff;color:#3730a3">${escapeHtml(v.time_of_day)}</span>
+        <span class="tl-doc">${dur} &middot; ${escapeHtml(v.date)}</span>
+      </div>`;
+    }).join('');
+    if (!visits.length) tl.innerHTML = '<div style="color:#999;padding:4px 0">No visits yet.</div>';
+  } catch(e) {}
 }
 
 async function loadStats() {
@@ -194,7 +245,8 @@ async function loadStats() {
   } catch(e) {}
 }
 loadStats();
-setInterval(loadStats, 5000);
+loadVisitStats();
+setInterval(() => { loadStats(); loadVisitStats(); }, 5000);
 </script>
 </body>
 </html>

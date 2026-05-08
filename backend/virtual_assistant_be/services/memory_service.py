@@ -5,6 +5,7 @@ import logging
 import os
 import time
 import uuid
+from datetime import datetime
 
 import requests
 
@@ -14,6 +15,7 @@ log = logging.getLogger(__name__)
 
 _DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
 _COUNTER_FILE = os.path.join(_DATA_DIR, "person_counter.json")
+_VISITS_FILE = os.path.join(_DATA_DIR, "visits_log.json")
 
 CHROMA_BASE = (
     f"{settings.chroma_url.rstrip('/')}"
@@ -28,8 +30,12 @@ class MemoryService:
         self.embed_model = settings.ollama_embed_model
         self.collection_name = "memories"
         self._collection_id: str | None = None
+        self._counter_file = _COUNTER_FILE
+        self._visits_file = _VISITS_FILE
         self._person_count = self._load_person_count()
         self._person_appeared_at: float | None = None
+        self._visits: list[dict] = self._load_visits()
+        self._current_visit_id: str | None = None
 
     def _embed(self, texts: str | list[str]) -> list[float] | list[list[float]]:
         single = isinstance(texts, str)
@@ -122,9 +128,11 @@ class MemoryService:
             self._person_count += 1
             self._persist_person_count()
             self._person_appeared_at = now
+            self._start_visit(now)
         elif event_type == "disappeared" and self._person_appeared_at is not None:
             duration = round(now - self._person_appeared_at, 1)
             self._person_appeared_at = None
+            self._end_visit(now, duration)
 
         count = self._person_count
 
@@ -158,20 +166,94 @@ class MemoryService:
         except requests.RequestException:
             log.warning("Failed to store person event", exc_info=True)
 
+    def _start_visit(self, timestamp: float) -> None:
+        visit_id = str(uuid.uuid4())
+        dt = datetime.fromtimestamp(timestamp)
+        self._visits.append({
+            "visit_id": visit_id,
+            "start_time": timestamp,
+            "end_time": None,
+            "duration_s": None,
+            "time_of_day": dt.strftime("%H:%M"),
+            "date": dt.strftime("%Y-%m-%d"),
+        })
+        self._current_visit_id = visit_id
+        self._persist_visits()
+
+    def _end_visit(self, timestamp: float, duration_s: float) -> None:
+        for v in self._visits:
+            if v["visit_id"] == self._current_visit_id:
+                v["end_time"] = timestamp
+                v["duration_s"] = duration_s
+                break
+        self._current_visit_id = None
+        self._persist_visits()
+
+    def get_visit_stats(self) -> dict:
+        completed = [v for v in self._visits if v["duration_s"] is not None]
+        durations = [v["duration_s"] for v in completed if v["duration_s"] is not None]
+        today = datetime.now().strftime("%Y-%m-%d")
+        today_visits = sum(1 for v in self._visits if v["date"] == today)
+
+        hour_dist: dict[str, int] = {}
+        for v in self._visits:
+            hour = v["time_of_day"].split(":")[0]
+            hour_dist[hour] = hour_dist.get(hour, 0) + 1
+
+        avg_duration = round(sum(durations) / len(durations), 1) if durations else 0.0
+        max_duration = round(max(durations), 1) if durations else 0.0
+        min_duration = round(min(durations), 1) if durations else 0.0
+
+        return {
+            "total_visits": len(self._visits),
+            "completed_visits": len(completed),
+            "active_visit": self._current_visit_id is not None,
+            "today_visits": today_visits,
+            "average_duration_s": avg_duration,
+            "max_duration_s": max_duration,
+            "min_duration_s": min_duration,
+            "total_duration_s": round(sum(durations), 1),
+            "visits_by_hour": dict(sorted(hour_dist.items())),
+        }
+
+    def get_recent_visits(self, n: int = 10) -> list[dict]:
+        sorted_visits = sorted(
+            self._visits, key=lambda v: v["start_time"], reverse=True
+        )
+        return sorted_visits[:n]
+
     def get_person_count(self) -> int:
         return self._person_count
 
     def _persist_person_count(self) -> None:
         try:
             os.makedirs(_DATA_DIR, exist_ok=True)
-            with open(_COUNTER_FILE, "w") as f:
+            with open(self._counter_file, "w") as f:
                 json.dump({"person_count": self._person_count}, f)
         except Exception:
             log.warning("Failed to persist person count", exc_info=True)
 
+    def _persist_visits(self) -> None:
+        try:
+            os.makedirs(_DATA_DIR, exist_ok=True)
+            with open(self._visits_file, "w") as f:
+                json.dump(self._visits, f)
+        except Exception:
+            log.warning("Failed to persist visits log", exc_info=True)
+
+    def _load_visits(self) -> list[dict]:
+        try:
+            with open(self._visits_file) as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return []
+        except Exception:
+            log.warning("Failed to load visits log", exc_info=True)
+            return []
+
     def _load_person_count(self) -> int:
         try:
-            with open(_COUNTER_FILE) as f:
+            with open(self._counter_file) as f:
                 return json.load(f).get("person_count", 0)
         except FileNotFoundError:
             return 0
