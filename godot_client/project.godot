@@ -30,7 +30,10 @@ enabled=PackedStringArray("res://addons/shader_library/plugin.cfg")
 folder_colors={
 "res://assets/characters/": "green",
 "res://scenes/": "yellow",
-"res://scripts/": "red"
+"res://scripts/": "red",
+"res://shaders/": "purple",
+"res://shaders/materials/": "purple",
+"res://shaders/shaderlib/": "blue"
 }
 
 [input]

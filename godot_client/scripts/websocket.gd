@@ -1,6 +1,6 @@
 extends Node
 
-@export var websocket_url: String = "ws://localhost:5000"
+@export var websocket_url: String = "ws://localhost:7700/api/ws"
 @export var character: Character
 
 

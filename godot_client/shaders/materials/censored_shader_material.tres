@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://27jv157x2ar6"]
+
+[ext_resource type="Shader" uid="uid://kcus1v6hy42u" path="res://shaders/shaderlib/censored.gdshader" id="1_e5pwi"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_e5pwi")
+shader_parameter/Pixel_Grid = Vector2(64, 64)
+shader_parameter/Blur_Amount = 2.0

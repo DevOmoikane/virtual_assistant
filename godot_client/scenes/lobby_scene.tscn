@@ -3,7 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://bfvph0kamg4tj" path="res://assets/characters/carlitos.tscn" id="1_4tn4g"]
 [ext_resource type="Script" uid="uid://dafgm86wolfa" path="res://scripts/lobby_scene.gd" id="1_g76d4"]
 [ext_resource type="Script" uid="uid://cwxhpoutcafpk" path="res://scripts/websocket.gd" id="2_g76d4"]
-[ext_resource type="Material" uid="uid://c8jnhnmkd4emq" path="res://assets/shaders/circle_sweep_shader_material.tres" id="4_d4cga"]
+[ext_resource type="Material" uid="uid://c8jnhnmkd4emq" path="res://shaders/materials/circle_sweep_shader_material.tres" id="4_d4cga"]
 
 [sub_resource type="Environment" id="Environment_d4cga"]
 background_mode = 1

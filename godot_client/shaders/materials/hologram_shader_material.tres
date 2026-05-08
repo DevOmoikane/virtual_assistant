@@ -1,0 +1,24 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://6jfixh2xgkdt"]
+
+[ext_resource type="Shader" uid="uid://3s2xxmuutjg8" path="res://shaders/shaderlib/hologram.gdshader" id="1_fus6n"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_fus6n")
+shader_parameter/primary_color = Color(0.34040093, 0.4892745, 0.98719996, 1)
+shader_parameter/secondary_color = Color(0.6903413, 0.78367007, 1, 1)
+shader_parameter/density = 2.0
+shader_parameter/effect_strength = 2.0
+shader_parameter/wipe_scale = 15.999999642368
+shader_parameter/wipe_speed = 0.17999999597664
+shader_parameter/wipe_blend = 0.27999999374144
+shader_parameter/signal_scale = 10.0
+shader_parameter/signal_speed = 0.5
+shader_parameter/signal_random_scale = 0.3
+shader_parameter/signal_blend = 0.499999988824
+shader_parameter/noise_distort_amount = 0.0999999977648
+shader_parameter/noise_amount = 1.0
+shader_parameter/grain_amount = 0.999999977648
+shader_parameter/displacement_amount = 0.20999999530608
+shader_parameter/flicker_amount = 0.06999999843536
+shader_parameter/flicker_speed = 4.27999990433344
