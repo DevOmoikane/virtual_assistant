@@ -93,7 +93,7 @@ class TestParse:
 
 class TestConstants:
     def test_outgoing_types(self):
-        assert OUTGOING_TYPES == {"animation", "state", "listen", "think", "speak"}
+        assert OUTGOING_TYPES == {"animation", "state", "listen", "think", "speak", "device"}
 
     def test_incoming_types(self):
         assert INCOMING_TYPES == {"event", "command"}

@@ -12,6 +12,7 @@ from virtual_assistant_be.core.protocol import (
     AnimationCmd,
     StateUpdate,
     SpeakCmd,
+    DeviceCmd,
     ListenIndicator,
     ThinkIndicator,
     serialize,
@@ -23,6 +24,7 @@ from virtual_assistant_be.services.tts_service import TtsService
 from virtual_assistant_be.services.camera_service import CameraService
 from virtual_assistant_be.services.audio_service import AudioService
 from virtual_assistant_be.services.memory_service import MemoryService
+from virtual_assistant_be.services.command_service import CommandService
 
 SendFn = Callable[[dict], Awaitable[None]]
 
@@ -41,6 +43,7 @@ class BehaviorController:
         self.camera = CameraService(event_callback=self._on_camera_event)
         self.audio = AudioService(audio_callback=self._on_audio_chunk)
         self.memory = MemoryService()
+        self.commands = CommandService()
 
     async def _run_in_executor(self, fn, *args):
         loop = asyncio.get_running_loop()
@@ -123,6 +126,10 @@ class BehaviorController:
         try:
             intent = await self._run_in_executor(self.llm.classify_intent, text)
 
+            device_cmd = await self._run_in_executor(self.llm.classify_device_command, text)
+            if device_cmd:
+                await self._execute_device_command(device_cmd)
+
             context: str | None = None
             if intent in ("question",):
                 docs = await self._run_in_executor(self.rag.retrieve, text)
@@ -145,6 +152,34 @@ class BehaviorController:
             log.exception("handle_text failed")
         finally:
             await self._send_think(False)
+
+    async def _execute_device_command(self, cmd: dict) -> None:
+        result = {"status": "unknown_command", "device": "unknown"}
+        try:
+            match cmd.get("device"):
+                case "lights":
+                    result = self.commands.execute_lights(cmd.get("action", "toggle"))
+                case "door":
+                    result = self.commands.execute_door(cmd.get("action", "toggle"))
+                case "send_message":
+                    result = self.commands.execute_send_message(
+                        cmd.get("action", ""), cmd.get("message", ""),
+                    )
+                case "home_assistant":
+                    result = self.commands.execute_home_assistant(cmd.get("command", ""))
+        except Exception:
+            log.exception("Device command failed")
+            result = {"status": "error", "device": cmd.get("device", "unknown")}
+
+        await self._send(
+            serialize(DeviceCmd(
+                device=result.get("device", ""),
+                action=result.get("action", ""),
+                status=result.get("status", ""),
+                message=result.get("message", ""),
+            ))
+        )
+        log.info("Device command result: %s", result)
 
     async def _on_ready(self) -> None:
         await self.send_animation("greet")
