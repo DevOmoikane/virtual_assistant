@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Tools</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234f46e5'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+  h1 { color: #333; }
+  .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  label { display: block; margin: 10px 0 4px; font-weight: 600; color: #444; }
+  textarea, input[type="text"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
+  textarea { min-height: 120px; resize: vertical; }
+  button { margin-top: 10px; padding: 10px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+  .btn-primary { background: #4f46e5; color: #fff; }
+  .btn-primary:hover { background: #4338ca; }
+  .btn-success { background: #16a34a; color: #fff; }
+  .btn-success:hover { background: #15803d; }
+  .result { margin-top: 12px; padding: 12px; border-radius: 4px; background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .result.error { background: #fef2f2; border-color: #fecaca; }
+  .result pre { white-space: pre-wrap; margin: 0; }
+  .status { font-size: 13px; color: #666; margin-top: 6px; }
+  .section-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #333; }
+</style>
+</head>
+<body>
+  <h1>RAG Tools</h1>
+
+  <div class="card">
+    <div class="section-title">Ingest Document</div>
+    <label for="source">Source name</label>
+    <input type="text" id="source" placeholder="e.g. my_document.txt" value="manual">
+
+    <label for="text">Document text</label>
+    <textarea id="text" placeholder="Paste or type the document content here..."></textarea>
+
+    <button id="ingest-btn" class="btn-primary" onclick="ingest()">Ingest</button>
+    <div id="ingest-result" class="status"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Ask a Question</div>
+    <label for="query">Question</label>
+    <input type="text" id="query" placeholder="Ask something about the ingested documents..." onkeydown="if(event.key==='Enter')ask()">
+
+    <button id="ask-btn" class="btn-success" onclick="ask()">Ask</button>
+    <div id="ask-result" class="status"></div>
+  </div>
+
+<script>
+async function ingest() {
+  const text = document.getElementById('text').value.trim();
+  const source = document.getElementById('source').value.trim() || 'manual';
+  if (!text) { document.getElementById('ingest-result').innerHTML = '<span style="color:#dc2626">Please enter document text.</span>'; return; }
+
+  const btn = document.getElementById('ingest-btn');
+  const status = document.getElementById('ingest-result');
+  btn.disabled = true; status.innerHTML = 'Ingesting...';
+  try {
+    const r = await fetch('/api/rag/ingest', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({text, source}) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'error');
+    status.innerHTML = `<span style="color:#16a34a">Ingested ${d.chunks} chunks from "${d.source}"</span>`;
+  } catch(e) { status.innerHTML = `<span style="color:#dc2626">${e.message}</span>`; }
+  finally { btn.disabled = false; }
+}
+
+async function ask() {
+  const query = document.getElementById('query').value.trim();
+  if (!query) { document.getElementById('ask-result').innerHTML = '<span style="color:#dc2626">Please enter a question.</span>'; return; }
+
+  const btn = document.getElementById('ask-btn');
+  const status = document.getElementById('ask-result');
+  btn.disabled = true; status.innerHTML = 'Thinking...';
+  try {
+    const r = await fetch('/api/rag/ask', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({query}) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'error');
+
+    let html = '';
+    if (d.answer) {
+      html += `<div class="result"><pre>${escapeHtml(d.answer)}</pre></div>`;
+    }
+    if (d.context && d.context.length) {
+      html += `<div style="margin-top:8px;font-size:13px;color:#666"><strong>Retrieved ${d.context.length} context chunk(s):</strong></div>`;
+      d.context.forEach((c, i) => {
+        html += `<div class="result" style="margin-top:4px;font-size:13px"><pre>${escapeHtml(c)}</pre></div>`;
+      });
+    }
+    if (!d.answer && (!d.context || !d.context.length)) {
+      html = '<span style="color:#888">No relevant context found.</span>';
+    }
+    status.innerHTML = html;
+  } catch(e) { status.innerHTML = `<span style="color:#dc2626">${e.message}</span>`; }
+  finally { btn.disabled = false; }
+}
+
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

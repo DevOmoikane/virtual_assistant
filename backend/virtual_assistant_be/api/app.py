@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from virtual_assistant_be.api.routes.ws import router as ws_router
 from virtual_assistant_be.api.routes.health import router as health_router
+from virtual_assistant_be.api.routes.rag import router as rag_router
+from virtual_assistant_be.api.routes.rag import tools_router as rag_tools_router
 
 import logging
 from rich.logging import RichHandler
@@ -30,6 +32,8 @@ def create_app() -> FastAPI:
 
     app.include_router(ws_router)
     app.include_router(health_router)
+    app.include_router(rag_router)
+    app.include_router(rag_tools_router)
 
     return app
 
