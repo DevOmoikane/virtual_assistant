@@ -29,6 +29,14 @@
   .stats { display: flex; gap: 20px; flex-wrap: wrap; }
   .stat { font-size: 14px; color: #555; }
   .stat strong { font-size: 24px; color: #4f46e5; display: block; }
+  .timeline { max-height: 300px; overflow-y: auto; font-size: 13px; }
+  .tl-item { padding: 6px 0; border-bottom: 1px solid #eee; display: flex; gap: 8px; }
+  .tl-item:last-child { border: none; }
+  .tl-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .badge-interaction { background: #dbeafe; color: #1d4ed8; }
+  .badge-person_event { background: #fef3c7; color: #b45309; }
+  .tl-ts { color: #999; font-size: 11px; white-space: nowrap; min-width: 70px; }
+  .tl-doc { color: #555; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
@@ -38,7 +46,10 @@
     <div class="section-title">Memory Stats</div>
     <div class="stats">
       <div class="stat"><strong id="person-count">?</strong>People seen</div>
+      <div class="stat"><strong id="interaction-count">?</strong>Interactions</div>
+      <div class="stat"><strong id="last-visit">-</strong>Last visit</div>
     </div>
+    <div class="timeline" id="timeline"></div>
   </div>
 
   <div class="card">
@@ -142,14 +153,48 @@ async function ask() {
 
 function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+function fmtTime(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function fmtDuration(s) {
+  if (!s) return '';
+  return s >= 60 ? `${Math.round(s/60)}m` : `${s}s`;
+}
+
 async function loadStats() {
   try {
-    const r = await fetch('/api/rag/memory/person-count');
-    const d = await r.json();
-    document.getElementById('person-count').textContent = d.person_count;
+    const [r1, r2] = await Promise.all([
+      fetch('/api/rag/memory/person-count'),
+      fetch('/api/rag/memory/recent?n=20')
+    ]);
+    const pc = await r1.json();
+    const re = await r2.json();
+    document.getElementById('person-count').textContent = pc.person_count;
+
+    const events = re.events || [];
+    let interactions = 0, lastTs = null;
+    const tl = document.getElementById('timeline');
+    tl.innerHTML = events.map(e => {
+      if (e.type === 'interaction') interactions++;
+      if (e.timestamp && (!lastTs || e.timestamp > lastTs)) lastTs = e.timestamp;
+      const label = e.type === 'interaction' ? 'chat' : e.event || e.type;
+      return `<div class="tl-item">
+        <span class="tl-ts">${fmtTime(e.timestamp)}</span>
+        <span class="tl-badge badge-${e.type}">${escapeHtml(label)}</span>
+        <span class="tl-doc">${escapeHtml((e.document || '').slice(0,120))}</span>
+      </div>`;
+    }).join('');
+    if (!events.length) tl.innerHTML = '<div style="color:#999;padding:4px 0">No events yet.</div>';
+
+    document.getElementById('interaction-count').textContent = interactions;
+    document.getElementById('last-visit').textContent = lastTs ? fmtTime(lastTs) : '-';
   } catch(e) {}
 }
 loadStats();
+setInterval(loadStats, 5000);
 </script>
 </body>
 </html>
