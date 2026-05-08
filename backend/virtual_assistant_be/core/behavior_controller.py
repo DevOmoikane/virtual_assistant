@@ -33,15 +33,16 @@ _GREETING = "Hello! I'm ready to help."
 class BehaviorController:
     def __init__(self, send_fn: SendFn | None = None) -> None:
         self._send: SendFn | None = send_fn
-        self._loop = asyncio.get_event_loop()
-        self._executor = self._loop.run_in_executor
-
         self.llm = LlmService()
         self.rag = RagService()
         self.stt = SttService()
         self.tts = TtsService()
         self.camera = CameraService(event_callback=self._on_camera_event)
         self.audio = AudioService(audio_callback=self._on_audio_chunk)
+
+    async def _run_in_executor(self, fn, *args):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, fn, *args)
 
     def set_send_fn(self, send_fn: SendFn) -> None:
         self._send = send_fn
@@ -59,7 +60,7 @@ class BehaviorController:
 
     async def _on_person_appeared(self) -> None:
         await self.send_animation("greet")
-        await self._executor(None, self.tts.speak, "Hello there!")
+        await self._run_in_executor(self.tts.speak, "Hello there!")
         await self._send_speak("Hello there!")
 
     async def _on_person_disappeared(self) -> None:
@@ -71,11 +72,11 @@ class BehaviorController:
         match gesture:
             case "wave":
                 await self.send_animation("greet")
-                await self._executor(None, self.tts.speak, "I see you waving!")
+                await self._run_in_executor(self.tts.speak, "I see you waving!")
                 await self._send_speak("I see you waving!")
             case "thumbs_up":
                 await self.send_animation("nod")
-                await self._executor(None, self.tts.speak, "Got it!")
+                await self._run_in_executor(self.tts.speak, "Got it!")
                 await self._send_speak("Got it!")
             case "open_palm":
                 await self.send_animation("listen")
@@ -89,7 +90,7 @@ class BehaviorController:
     async def _on_audio_chunk(self, audio: np.ndarray) -> None:
         await self._send_listen(True)
         try:
-            text = await self._executor(None, self.stt.transcribe, audio)
+            text = await self._run_in_executor(self.stt.transcribe, audio)
             text = text.strip()
             if text:
                 log.info("STT: %s", text)
@@ -116,22 +117,22 @@ class BehaviorController:
     async def handle_text(self, text: str) -> None:
         await self._send_think(True)
         try:
-            intent = await self._executor(None, self.llm.classify_intent, text)
+            intent = await self._run_in_executor(self.llm.classify_intent, text)
 
             context: str | None = None
             if intent in ("question",):
-                docs = await self._executor(None, self.rag.retrieve, text)
+                docs = await self._run_in_executor(self.rag.retrieve, text)
                 if docs:
                     context = "\n\n".join(docs)
 
-            response, resolved_intent = await self._executor(
-                None, self.llm.generate_response, text, context,
+            response, resolved_intent = await self._run_in_executor(
+                self.llm.generate_response, text, context,
             )
 
             if response:
                 log.info("LLM response: %s", response[:100])
                 await self._send_speak(response)
-                await self._executor(None, self.tts.speak, response)
+                await self._run_in_executor(self.tts.speak, response)
 
             anim = self.llm.decide_animation(text, resolved_intent)
             await self.send_animation(anim)
@@ -143,11 +144,12 @@ class BehaviorController:
     async def _on_ready(self) -> None:
         await self.send_animation("greet")
         await self._send(serialize(StateUpdate(connected=True)))
-        await self._executor(None, self.tts.speak, _GREETING)
+        await self._run_in_executor(self.tts.speak, _GREETING)
         await self._send_speak(_GREETING)
 
-        self.camera.start(self._loop)
-        self.audio.start(self._loop)
+        loop = asyncio.get_running_loop()
+        self.camera.start(loop)
+        self.audio.start(loop)
 
     async def _on_shutdown(self) -> None:
         log.info("Shutting down")
