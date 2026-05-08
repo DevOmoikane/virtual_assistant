@@ -6,22 +6,50 @@ class_name Character
 
 @export var disconnected_shader: ShaderMaterial
 
-# Called when the node enters the scene tree for the first time.
-func _ready() -> void:
-	animation_player.play("imported/idle_breathing")
+var _current_animation: String = "imported/idle_breathing"
 
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-func _process(delta: float) -> void:
-	pass
+
+func _ready() -> void:
+	animation_player.play(_current_animation)
+
 
 func execute_action(action: String) -> void:
-	pass
+	match action:
+		"idle":
+			_play("imported/idle_breathing")
+		"greet":
+			_play("Yes")
+		"listen":
+			_play("Idle_FoldArms")
+		"think":
+			_play("Idle_FoldArms")
+		"nod":
+			_play("Yes")
+		"shake":
+			_play("Idle_No")
+		"surprised":
+			_play("Chest_Open")
+		"speak":
+			_play("Idle_TalkingPhone")
+		_:
+			_play("imported/idle_breathing")
+
+
+func _play(name: String) -> void:
+	if animation_player.has_animation(name):
+		_current_animation = name
+		animation_player.play(name)
+	else:
+		print("Animation not found: ", name)
+
 
 func set_disconnected() -> void:
 	mesh.set_surface_override_material(0, disconnected_shader)
-	
+
+
 func set_connected() -> void:
 	mesh.set_surface_override_material(0, null)
+
 
 func toggle_connected() -> void:
 	if mesh.get_surface_override_material(0) == null:
