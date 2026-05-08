@@ -144,8 +144,11 @@ class BehaviorController:
     async def _on_ready(self) -> None:
         await self.send_animation("greet")
         await self._send(serialize(StateUpdate(connected=True)))
-        await self._run_in_executor(self.tts.speak, _GREETING)
-        await self._send_speak(_GREETING)
+        try:
+            await self._run_in_executor(self.tts.speak, _GREETING)
+            await self._send_speak(_GREETING)
+        except Exception:
+            log.warning("TTS not available, skipping greeting speech")
 
         loop = asyncio.get_running_loop()
         self.camera.start(loop)

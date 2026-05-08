@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from typing import Callable, Awaitable
@@ -13,6 +14,14 @@ from virtual_assistant_be.core.config import settings
 
 try:
     import mediapipe as mp
+    from mediapipe.tasks.python.core.base_options import BaseOptions
+    from mediapipe.tasks.python.vision import (
+        FaceDetector,
+        FaceDetectorOptions,
+        GestureRecognizer,
+        GestureRecognizerOptions,
+        RunningMode,
+    )
 
     _HAS_MEDIAPIPE = True
 except ImportError:
@@ -22,48 +31,53 @@ log = logging.getLogger(__name__)
 
 EventCallback = Callable[[str, dict], Awaitable[None]]
 
-LANDMARK_NAMES = [
-    "WRIST",
-    "THUMB_CMC", "THUMB_MCP", "THUMB_IP", "THUMB_TIP",
-    "INDEX_FINGER_MCP", "INDEX_FINGER_PIP", "INDEX_FINGER_DIP", "INDEX_FINGER_TIP",
-    "MIDDLE_FINGER_MCP", "MIDDLE_FINGER_PIP", "MIDDLE_FINGER_DIP", "MIDDLE_FINGER_TIP",
-    "RING_FINGER_MCP", "RING_FINGER_PIP", "RING_FINGER_DIP", "RING_FINGER_TIP",
-    "PINKY_MCP", "PINKY_PIP", "PINKY_DIP", "PINKY_TIP",
-]
+MP_GESTURE_MAP = {
+    "Closed_Fist": "fist",
+    "Open_Palm": "open_palm",
+    "Pointing_Up": "point",
+    "Thumb_Down": "thumbs_down",
+    "Thumb_Up": "thumbs_up",
+    "Victory": "peace",
+    "ILoveYou": "love",
+}
 
-FINGER_TIPS = [4, 8, 12, 16, 20]
-FINGER_PIPS = [3, 6, 10, 14, 18]
+_MODEL_URLS = {
+    "blaze_face_short_range.tflite": (
+        "https://storage.googleapis.com/mediapipe-models/"
+        "face_detector/blaze_face_short_range/float16/1/"
+        "blaze_face_short_range.tflite"
+    ),
+    "gesture_recognizer.task": (
+        "https://storage.googleapis.com/mediapipe-models/"
+        "gesture_recognizer/gesture_recognizer/float16/1/"
+        "gesture_recognizer.task"
+    ),
+}
 
 
-def _is_finger_extended(landmarks: list, finger_tip: int, finger_pip: int) -> bool:
-    return landmarks[finger_tip].y < landmarks[finger_pip].y
+def _download_models() -> bool:
+    import requests
 
+    models_dir = settings.mediapipe_models_dir
+    os.makedirs(models_dir, exist_ok=True)
+    ok = True
 
-def _is_thumb_extended(landmarks: list) -> bool:
-    return landmarks[4].x < landmarks[3].x
+    for filename, url in _MODEL_URLS.items():
+        dest = os.path.join(models_dir, filename)
+        if os.path.isfile(dest):
+            continue
+        log.info("Downloading %s ...", filename)
+        try:
+            resp = requests.get(url, timeout=120)
+            resp.raise_for_status()
+            with open(dest, "wb") as f:
+                f.write(resp.content)
+            log.info("Downloaded %s (%.1f MB)", filename, len(resp.content) / 1e6)
+        except Exception:
+            log.warning("Failed to download %s", filename, exc_info=True)
+            ok = False
 
-
-def _classify_gesture(landmarks: list) -> str | None:
-    thumb_ext = _is_thumb_extended(landmarks)
-    index_ext = _is_finger_extended(landmarks, 8, 6)
-    middle_ext = _is_finger_extended(landmarks, 12, 10)
-    ring_ext = _is_finger_extended(landmarks, 16, 14)
-    pinky_ext = _is_finger_extended(landmarks, 20, 18)
-
-    fingers_extended = sum([index_ext, middle_ext, ring_ext, pinky_ext])
-
-    if thumb_ext and not any([index_ext, middle_ext, ring_ext, pinky_ext]):
-        return "thumbs_up"
-    if index_ext and not any([middle_ext, ring_ext, pinky_ext]):
-        return "point"
-    if index_ext and middle_ext and not ring_ext and not pinky_ext:
-        return "peace"
-    if fingers_extended == 4 and thumb_ext:
-        return "open_palm"
-    if fingers_extended == 0:
-        return "fist"
-
-    return None
+    return ok
 
 
 class CameraService:
@@ -73,8 +87,8 @@ class CameraService:
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
-        self._face_detection = None
-        self._hands = None
+        self._face_detector = None
+        self._gesture_recognizer = None
         self._cap: cv2.VideoCapture | None = None
 
         self._person_present = False
@@ -102,8 +116,12 @@ class CameraService:
         if self._cap:
             self._cap.release()
         self._cap = None
-        self._face_detection = None
-        self._hands = None
+        if self._face_detector:
+            self._face_detector.close()
+            self._face_detector = None
+        if self._gesture_recognizer:
+            self._gesture_recognizer.close()
+            self._gesture_recognizer = None
         log.info("Camera service stopped")
 
     def _emit(self, event: str, data: dict | None = None) -> None:
@@ -113,18 +131,33 @@ class CameraService:
             )
 
     def _run(self) -> None:
-        mp = __import__("mediapipe", fromlist=["python"])
+        face_model = settings.face_detection_model
+        gesture_model = settings.gesture_recognition_model
 
-        self._face_detection = mp.solutions.face_detection.FaceDetection(
-            model_selection=0, min_detection_confidence=0.5,
-        )
-        self._hands = mp.solutions.hands.Hands(
-            static_image_mode=False,
-            max_num_hands=2,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
-        _drawing = mp.solutions.drawing_utils
+        if not os.path.isfile(face_model) or not os.path.isfile(gesture_model):
+            log.info("Models missing, downloading ...")
+            if not _download_models():
+                log.warning("Failed to download models, camera disabled")
+                self._running = False
+                return
+
+        try:
+            face_opts = FaceDetectorOptions(
+                base_options=BaseOptions(model_asset_path=face_model),
+                running_mode=RunningMode.IMAGE,
+            )
+            self._face_detector = FaceDetector.create_from_options(face_opts)
+        except Exception:
+            log.warning("Failed to create face detector", exc_info=True)
+
+        try:
+            gesture_opts = GestureRecognizerOptions(
+                base_options=BaseOptions(model_asset_path=gesture_model),
+                running_mode=RunningMode.IMAGE,
+            )
+            self._gesture_recognizer = GestureRecognizer.create_from_options(gesture_opts)
+        except Exception:
+            log.warning("Failed to create gesture recognizer", exc_info=True)
 
         cap = cv2.VideoCapture(settings.camera_device_id or 0)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, settings.camera_width)
@@ -140,50 +173,64 @@ class CameraService:
                 break
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
-            self._process_faces(rgb)
-            self._process_hands(rgb)
+            self._process_faces(mp_image)
+            self._process_gestures(mp_image)
 
         cap.release()
-        self._face_detection.close()
-        self._hands.close()
         log.info("Camera loop ended")
 
-    def _process_faces(self, rgb: np.ndarray) -> None:
-        if self._face_detection is None:
-            return
-        results = self._face_detection.process(rgb)
-        faces_detected = results.detections is not None
-
-        if faces_detected and not self._person_present:
-            self._person_present = True
-            self._emit("person_appeared")
-            self._wave_history.clear()
-        elif not faces_detected and self._person_present:
-            self._person_present = False
-            self._emit("person_disappeared")
-
-    def _process_hands(self, rgb: np.ndarray) -> None:
-        if self._hands is None:
-            return
-        results = self._hands.process(rgb)
-
-        if not results.multi_hand_landmarks:
+    def _process_faces(self, mp_image: mp.Image) -> None:
+        if self._face_detector is None:
             return
 
-        for hand_landmarks in results.multi_hand_landmarks:
-            gesture = _classify_gesture(hand_landmarks.landmark)
-            if gesture is None:
+        try:
+            result = self._face_detector.detect(mp_image)
+            faces_detected = len(result.detections) > 0
+
+            if faces_detected and not self._person_present:
+                self._person_present = True
+                self._emit("person_appeared")
+                self._wave_history.clear()
+            elif not faces_detected and self._person_present:
+                self._person_present = False
+                self._emit("person_disappeared")
+        except Exception:
+            pass
+
+    def _process_gestures(self, mp_image: mp.Image) -> None:
+        if self._gesture_recognizer is None:
+            return
+
+        try:
+            result = self._gesture_recognizer.recognize(mp_image)
+        except Exception:
+            return
+
+        if not result.gestures:
+            return
+
+        for hand_idx, gesture_list in enumerate(result.gestures):
+            if not gesture_list:
                 continue
 
-            wrist = hand_landmarks.landmark[0]
+            top = gesture_list[0]
+            mp_gesture = top.category_name
+            gesture = MP_GESTURE_MAP.get(mp_gesture, mp_gesture.lower())
+
+            landmarks = result.hand_landmarks[hand_idx]
+            wrist = landmarks[0] if landmarks else None
+            x = round(wrist.x, 3) if wrist else 0.0
+            y = round(wrist.y, 3) if wrist else 0.0
+
             self._emit("gesture_detected", {
                 "gesture": gesture,
-                "x": round(wrist.x, 3),
-                "y": round(wrist.y, 3),
+                "x": x,
+                "y": y,
             })
 
-            if gesture == "open_palm":
+            if gesture == "open_palm" and wrist:
                 self._detect_wave(wrist.x)
 
     def _detect_wave(self, x: float) -> None:

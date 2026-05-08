@@ -1,6 +1,9 @@
 import os
 from dataclasses import dataclass
 
+_BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_MODELS_DIR = os.path.join(_BASE_DIR, "tools", "mediapipe_models")
+
 
 @dataclass
 class Settings:
@@ -27,6 +30,10 @@ class Settings:
     camera_device_id: int | None = None
     camera_width: int = 640
     camera_height: int = 480
+
+    mediapipe_models_dir: str = os.getenv("MEDIAPIPE_MODELS_DIR", _MODELS_DIR)
+    face_detection_model: str = os.path.join(_MODELS_DIR, "blaze_face_short_range.tflite")
+    gesture_recognition_model: str = os.path.join(_MODELS_DIR, "gesture_recognizer.task")
 
 
 settings = Settings()

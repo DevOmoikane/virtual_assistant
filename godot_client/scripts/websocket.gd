@@ -8,6 +8,9 @@ var should_reconnect: bool = true
 var reconnect_timer: float = 0.0
 var reconnect_delay: float = 3.0
 
+var _connected_sent: bool = false
+var _was_connected: bool = false
+
 signal connected()
 signal disconnected()
 
@@ -17,11 +20,12 @@ func _ready():
 
 
 func _connect_to_server():
+	_connected_sent = false
 	var err = socket.connect_to_url(websocket_url)
 	if err == OK:
 		print("Connecting to %s..." % websocket_url)
 	else:
-		push_error("WebSocket connection failed: ", err)
+		push_error("WebSocket connection failed: %d" % err)
 		_schedule_reconnect()
 
 
@@ -42,7 +46,18 @@ func _process(delta):
 	var state = socket.get_ready_state()
 
 	match state:
+		WebSocketPeer.STATE_CONNECTING:
+			pass
+
 		WebSocketPeer.STATE_OPEN:
+			if not _connected_sent:
+				_connected_sent = true
+				_was_connected = true
+				print("WebSocket connected, sending ready...")
+				var msg = JSON.stringify({"type": "command", "name": "ready"})
+				socket.send_text(msg)
+				emit_signal("connected")
+
 			while socket.get_available_packet_count():
 				var packet = socket.get_packet()
 				if socket.was_string_packet():
@@ -55,15 +70,10 @@ func _process(delta):
 		WebSocketPeer.STATE_CLOSED:
 			var code = socket.get_close_code()
 			print("WebSocket closed with code: %d" % code)
-			emit_signal("disconnected")
+			if _was_connected:
+				_was_connected = false
+				emit_signal("disconnected")
 			_schedule_reconnect()
-
-
-func _on_connected():
-	print("WebSocket connected, sending ready...")
-	var msg = JSON.stringify({"type": "command", "name": "ready"})
-	socket.send_text(msg)
-	emit_signal("connected")
 
 
 func _handle_message(raw: String):
@@ -84,9 +94,9 @@ func _handle_message(raw: String):
 			if character:
 				character.execute_action(anim_name)
 		"state":
-			var connected_state = data.get("connected", false)
+			var s = data.get("connected", false)
 			if character:
-				if connected_state:
+				if s:
 					character.set_connected()
 				else:
 					character.set_disconnected()
@@ -95,25 +105,12 @@ func _handle_message(raw: String):
 			print("Server says: ", text)
 		"listen":
 			var active = data.get("active", false)
-			print("Listening: ", active)
+			print("Mic listening: ", active)
 		"think":
 			var active = data.get("active", false)
 			print("Thinking: ", active)
 		_:
 			print("Unknown message type: ", msg_type)
-
-
-func _on_connection_succeeded(_proto = ""):
-	_on_connected()
-
-
-func _on_connection_error():
-	push_error("WebSocket connection error")
-	_schedule_reconnect()
-
-
-func _on_data_received():
-	pass
 
 
 func disconnect_from_server():
