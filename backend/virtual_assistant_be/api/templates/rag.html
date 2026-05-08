@@ -17,6 +17,10 @@
   .btn-primary:hover { background: #4338ca; }
   .btn-success { background: #16a34a; color: #fff; }
   .btn-success:hover { background: #15803d; }
+  .btn-file { background: #ca8a04; color: #fff; }
+  .btn-file:hover { background: #a16207; }
+  .file-input-wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .file-input-wrap input[type="file"] { flex: 1; padding: 6px; border: 1px solid #ccc; border-radius: 4px; background: #fff; font-size: 13px; }
   .result { margin-top: 12px; padding: 12px; border-radius: 4px; background: #f0fdf4; border: 1px solid #bbf7d0; }
   .result.error { background: #fef2f2; border-color: #fecaca; }
   .result pre { white-space: pre-wrap; margin: 0; }
@@ -37,6 +41,16 @@
 
     <button id="ingest-btn" class="btn-primary" onclick="ingest()">Ingest</button>
     <div id="ingest-result" class="status"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Upload File</div>
+    <label for="file">File (PDF, DOCX, DOC, ODT, MD, TXT)</label>
+    <div class="file-input-wrap">
+      <input type="file" id="file" accept=".pdf,.docx,.doc,.odt,.md,.txt">
+      <button id="upload-btn" class="btn-file" onclick="uploadFile()">Upload &amp; Ingest</button>
+    </div>
+    <div id="upload-result" class="status"></div>
   </div>
 
   <div class="card">
@@ -62,6 +76,26 @@ async function ingest() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'error');
     status.innerHTML = `<span style="color:#16a34a">Ingested ${d.chunks} chunks from "${d.source}"</span>`;
+  } catch(e) { status.innerHTML = `<span style="color:#dc2626">${e.message}</span>`; }
+  finally { btn.disabled = false; }
+}
+
+async function uploadFile() {
+  const input = document.getElementById('file');
+  const file = input.files[0];
+  const status = document.getElementById('upload-result');
+  if (!file) { status.innerHTML = '<span style="color:#dc2626">Please select a file.</span>'; return; }
+
+  const btn = document.getElementById('upload-btn');
+  btn.disabled = true; status.innerHTML = 'Uploading & ingesting...';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/rag/ingest/file', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'error');
+    status.innerHTML = `<span style="color:#16a34a">Ingested ${d.chunks} chunks from "${d.source}" (${d.type})</span>`;
+    input.value = '';
   } catch(e) { status.innerHTML = `<span style="color:#dc2626">${e.message}</span>`; }
   finally { btn.disabled = false; }
 }

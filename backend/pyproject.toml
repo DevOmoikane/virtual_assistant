@@ -15,5 +15,9 @@ dependencies = [
     "requests",
     "piper-tts",
     "opencv-python",
-    "mediapipe"
+    "mediapipe",
+    "PyMuPDF",
+    "python-docx",
+    "odfpy",
+    "python-multipart"
 ]
