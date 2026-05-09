@@ -1,0 +1,30 @@
+host: "0.0.0.0"
+port: 7700
+
+ollama:
+  url: "http://localhost:11434"
+  gen_model: "llama3.1"
+  embed_model: "nomic-embed-text"
+
+chroma:
+  url: "http://localhost:8000"
+  collection: "rag_docs"
+
+stt:
+  model_size: "base"
+  sample_rate: 16000
+  chunk_duration: 3.0
+  device_id: null
+
+piper_voice_path: "~/dev/omoikane/visual_assistant/backend/tools/piper/en_US-lessac-medium.onnx"
+
+camera:
+  device_id: null
+  width: 640
+  height: 480
+
+mediapipe:
+  models_dir: null  # defaults to backend/tools/mediapipe_models
+
+telegram:
+  bot_token: "5149792841:AAEcBvxY_OX9sdoOgK3VE_Eo1d33xEHI72Q"

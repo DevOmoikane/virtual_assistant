@@ -19,5 +19,6 @@ dependencies = [
     "PyMuPDF",
     "python-docx",
     "odfpy",
-    "python-multipart"
+    "python-multipart",
+    "pyyaml"
 ]
