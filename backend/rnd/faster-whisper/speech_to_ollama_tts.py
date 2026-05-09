@@ -13,7 +13,7 @@ SAMPLE_RATE = 16000
 CHUNK_DURATION = 3
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "llama3.1:latest"
-PIPER_VOICE_PATH = "/Users/israel/dev/omoikane/visual_assistant/backend/tools/piper/en_US-lessac-medium.onnx"
+PIPER_VOICE_PATH = "../../tools/piper/en_US-lessac-medium.onnx"
 
 audio_buffer = np.array([], dtype=np.float32)
 buffer_lock = threading.Lock()

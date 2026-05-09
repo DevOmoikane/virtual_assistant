@@ -37,7 +37,10 @@ class Settings:
     stt_chunk_duration: float = 3.0
     stt_device_id: int | None = None
 
-    piper_voice_path: str = ""
+    piper_voice_path: str = os.getenv(
+        "PIPER_VOICE_PATH",
+        os.path.expanduser("./tools/piper/en_US-lessac-medium.onnx"),
+    )
 
     camera_device_id: int | None = None
     camera_width: int = 640
