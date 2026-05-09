@@ -4,7 +4,7 @@ services:
     volumes:
       - ./chroma-data:/data
     ports:
-      - "8000:8000"
+      - "8100:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
       interval: 30s
