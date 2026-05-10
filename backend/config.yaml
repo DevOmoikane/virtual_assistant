@@ -7,7 +7,7 @@ ollama:
   embed_model: "nomic-embed-text"
 
 chroma:
-  url: "http://localhost:8000"
+  url: "http://localhost:8100"
   collection: "rag_docs"
 
 stt:
@@ -16,7 +16,7 @@ stt:
   chunk_duration: 3.0
   device_id: null
 
-piper_voice_path: "~/dev/omoikane/visual_assistant/backend/tools/piper/en_US-lessac-medium.onnx"
+piper_voice_path: "./tools/piper/en_US-lessac-medium.onnx"
 
 camera:
   device_id: null
@@ -27,4 +27,5 @@ mediapipe:
   models_dir: null  # defaults to backend/tools/mediapipe_models
 
 telegram:
+  enabled: false
   bot_token: "5149792841:AAEcBvxY_OX9sdoOgK3VE_Eo1d33xEHI72Q"

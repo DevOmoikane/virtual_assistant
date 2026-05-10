@@ -20,7 +20,7 @@ _CONTACTS_FILE = os.path.join(_DATA_DIR, "telegram_contacts.json")
 class TelegramService:
     def __init__(self) -> None:
         self._token: str = settings.telegram_bot_token.strip()
-        self._enabled = bool(self._token)
+        self._enabled = settings.telegram_enabled and bool(self._token)
         self._api_base = f"https://api.telegram.org/bot{self._token}"
         self._contacts: list[dict] = self._load_contacts()
         self._polling = False

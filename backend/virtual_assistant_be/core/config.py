@@ -50,6 +50,7 @@ class Settings:
     face_detection_model: str = ""
     gesture_recognition_model: str = ""
 
+    telegram_enabled: bool = True
     telegram_bot_token: str = ""
 
     def _apply_yaml(self, cfg: dict) -> None:
@@ -91,6 +92,7 @@ class Settings:
         )
 
         telegram = cfg.get("telegram", {})
+        self.telegram_enabled = telegram.get("enabled", self.telegram_enabled)
         self.telegram_bot_token = telegram.get("bot_token", self.telegram_bot_token)
 
     def _apply_env(self) -> None:
@@ -105,6 +107,7 @@ class Settings:
             "stt_model_size": "STT_MODEL_SIZE",
             "piper_voice_path": "PIPER_VOICE_PATH",
             "mediapipe_models_dir": "MEDIAPIPE_MODELS_DIR",
+            "telegram_enabled": "TELEGRAM_ENABLED",
             "telegram_bot_token": "TELEGRAM_BOT_TOKEN",
         }
         for attr, env_var in env_map.items():
@@ -130,4 +133,4 @@ class Settings:
 
 settings = Settings()
 settings._apply_yaml(_load_yaml())
-settings._apply_env()
+# settings._apply_env()

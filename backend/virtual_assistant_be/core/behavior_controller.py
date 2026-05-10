@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Callable, Awaitable
 
 import numpy as np
@@ -48,6 +49,9 @@ class BehaviorController:
         self.commands = CommandService(telegram_service=self.telegram)
         self.telegram.set_message_callback(self._on_telegram_message)
 
+        self._last_person_greeted: float = 0.0
+        self._last_gesture_time: float = 0.0
+
     async def _run_in_executor(self, fn, *args):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, fn, *args)
@@ -67,6 +71,10 @@ class BehaviorController:
                 await self._on_gesture(data)
 
     async def _on_person_appeared(self) -> None:
+        now = time.monotonic()
+        if now - self._last_person_greeted < 30.0:
+            return
+        self._last_person_greeted = now
         await self._run_in_executor(self.memory.store_person_event, "appeared")
         await self.send_animation("greet")
         await self._run_in_executor(self.tts.speak, "Hello there!")
@@ -79,6 +87,12 @@ class BehaviorController:
 
     async def _on_gesture(self, data: dict) -> None:
         gesture = data.get("gesture", "")
+        if gesture in ("none", "closed_fist", ""):
+            return
+        now = time.monotonic()
+        if now - self._last_gesture_time < 5.0:
+            return
+        self._last_gesture_time = now
         match gesture:
             case "wave":
                 await self.send_animation("greet")
@@ -119,6 +133,11 @@ class BehaviorController:
 
     async def handle_event(self, msg: GoEvent) -> None:
         log.info("Event from Godot: %s %s", msg.name, msg.params)
+        match msg.name:
+            case "text":
+                text = (msg.params or {}).get("text", "")
+                if text:
+                    await self.handle_text(text)
 
     async def handle_command(self, msg: GoCommand) -> None:
         log.info("Command from Godot: %s %s", msg.name, msg.params)
@@ -194,16 +213,18 @@ class BehaviorController:
     async def _on_ready(self) -> None:
         await self.send_animation("greet")
         await self._send(serialize(StateUpdate(connected=True)))
+
+        loop = asyncio.get_running_loop()
+        self.camera.start(loop)
+        self.audio.start(loop)
+        await self._send_listen(True)
+        await self._run_in_executor(self.telegram.start_polling)
+
         try:
             await self._run_in_executor(self.tts.speak, _GREETING)
             await self._send_speak(_GREETING)
         except Exception:
             log.warning("TTS not available, skipping greeting speech")
-
-        loop = asyncio.get_running_loop()
-        self.camera.start(loop)
-        self.audio.start(loop)
-        await self._run_in_executor(self.telegram.start_polling)
 
     async def _on_shutdown(self) -> None:
         log.info("Shutting down")

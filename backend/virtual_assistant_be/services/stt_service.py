@@ -15,8 +15,10 @@ class SttService:
         self._model: WhisperModel | None = None
         self.model_size = settings.stt_model_size
         self.sample_rate = settings.stt_sample_rate
+        self._ensure_model()
 
     def _ensure_model(self) -> WhisperModel:
+        log.debug("Checking if model is loaded ...")
         if self._model is None:
             log.info("Loading whisper model '%s' ...", self.model_size)
             self._model = WhisperModel(self.model_size, device="auto", compute_type="int8")
