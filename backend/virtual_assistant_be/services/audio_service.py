@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from typing import Callable, Awaitable
 
 import numpy as np
 import sounddevice as sd
 
 from virtual_assistant_be.core.config import settings
+from virtual_assistant_be.timer import log_duration
 
 log = logging.getLogger(__name__)
 
@@ -18,17 +20,19 @@ DeviceCallback = Callable[[list[dict]], None]
 SAMPLE_RATE = settings.stt_sample_rate
 FRAME_SIZE = 480
 SILENCE_THRESHOLD = 0.01
-SILENCE_TIMEOUT = 1.0
+SILENCE_TIMEOUT = 0.5
 MIN_SPEECH_DURATION = 0.5
 MAX_SPEECH_DURATION = 15.0
 
 
 class AudioService:
-    def __init__(self, audio_callback: AudioCallback | None = None) -> None:
+    def __init__(self, audio_callback: AudioCallback | None = None,
+                 device_id: int | str | None = None) -> None:
         self._callback = audio_callback
         self._running = False
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._device_id = device_id
 
         self._buffer: np.ndarray = np.array([], dtype=np.float32)
         self._buffer_lock = threading.Lock()
@@ -36,6 +40,7 @@ class AudioService:
         self._silence_frames = 0.0
         self._speech_duration = 0.0
         self._speech_active = False
+        self._speech_start_time = 0.0
         self._muted = False
         self._mute_lock = threading.Lock()
 
@@ -87,13 +92,16 @@ class AudioService:
         frame_duration = len(chunk) / SAMPLE_RATE
 
         if is_speech:
+            if not self._speech_active:
+                log.info("TIMING vad: speech started (waiting for silence timeout)")
+                self._speech_start_time = time.monotonic()
             self._speech_buffer = np.append(self._speech_buffer, chunk)
             self._silence_frames = 0.0
             self._speech_duration += frame_duration
             if not self._speech_active:
                 self._speech_active = True
             if self._speech_duration >= MAX_SPEECH_DURATION:
-                log.info("Speech segment: %.2fs (max duration)", len(self._speech_buffer) / SAMPLE_RATE)
+                log_duration("vad.speech_segment", time.monotonic() - self._speech_start_time)
                 self._emit(self._speech_buffer.copy())
                 self._speech_buffer = np.array([], dtype=np.float32)
                 self._speech_active = False
@@ -105,10 +113,9 @@ class AudioService:
                 self._speech_buffer = np.append(self._speech_buffer, chunk)
 
                 if self._silence_frames >= SILENCE_TIMEOUT:
-                    duration = len(self._speech_buffer) / SAMPLE_RATE
-                    if duration >= MIN_SPEECH_DURATION:
-                        log.info("Speech segment: %.2fs", duration)
-                        self._emit(self._speech_buffer.copy())
+                    total_duration = time.monotonic() - self._speech_start_time
+                    log_duration("vad.speech_to_emit", total_duration)
+                    self._emit(self._speech_buffer.copy())
 
                     self._speech_buffer = np.array([], dtype=np.float32)
                     self._speech_active = False
@@ -122,7 +129,7 @@ class AudioService:
                 channels=1,
                 callback=self._audio_callback,
                 blocksize=FRAME_SIZE,
-                device=settings.stt_device_id,
+                device=self._device_id,
             ):
                 while self._running:
                     sd.sleep(100)

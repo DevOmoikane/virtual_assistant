@@ -6,6 +6,7 @@ import numpy as np
 from faster_whisper import WhisperModel
 
 from virtual_assistant_be.core.config import settings
+from virtual_assistant_be.timer import Timer
 
 log = logging.getLogger(__name__)
 
@@ -26,34 +27,31 @@ class SttService:
         return self._model
 
     def transcribe(self, audio: np.ndarray) -> str:
-        log.info("Transcribing audio")
-        model = self._ensure_model()
+        with Timer("stt.transcribe"):
+            model = self._ensure_model()
 
-        if len(audio) == 0:
-            log.info("No audio available, it is empty")
-            return ""
+            if len(audio) == 0:
+                return ""
 
-        peak = np.max(np.abs(audio))
-        if peak > 0:
-            log.info("Audio has good volume")
-            audio = audio / peak * 0.95
+            peak = np.max(np.abs(audio))
+            if peak > 0:
+                audio = audio / peak * 0.95
 
-        log.info("... modle transcribing")
-        segments, _info = model.transcribe(
-            audio,
-            language="en",
-            beam_size=1,
-        )
+            segments, _info = model.transcribe(
+                audio,
+                language="en",
+                beam_size=1,
+            )
 
-        log.info("... merging segments")
-        texts: list[str] = []
-        for segment in segments:
-            t = segment.text.strip()
-            if t:
-                texts.append(t)
-        
-        joined_texts: str = " ".join(texts)
-        log.info("Transcription: %s", joined_texts)
+            texts: list[str] = []
+            for segment in segments:
+                t = segment.text.strip()
+                if t:
+                    texts.append(t)
+
+            joined_texts: str = " ".join(texts)
+            if joined_texts:
+                log.info("STT result: %s", joined_texts)
 
         return joined_texts
 

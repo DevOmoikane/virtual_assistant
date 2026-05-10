@@ -7,6 +7,7 @@ from typing import Callable, Awaitable
 
 import numpy as np
 
+from virtual_assistant_be.timer import Timer, log_duration
 from virtual_assistant_be.core.protocol import (
     GoEvent,
     GoCommand,
@@ -48,7 +49,10 @@ class BehaviorController:
             event_callback=self._on_camera_event,
             face_service=self.face_service,
         )
-        self.audio = AudioService(audio_callback=self._on_audio_chunk)
+        self.audio = AudioService(
+            audio_callback=self._on_audio_chunk,
+            device_id=self.camera.audio_device_id,
+        )
         self.memory = MemoryService()
         self.telegram = TelegramService()
         self.commands = CommandService(telegram_service=self.telegram)
@@ -144,11 +148,14 @@ class BehaviorController:
     async def _on_audio_chunk(self, audio: np.ndarray) -> None:
         await self._send_listen(True)
         try:
+            t0 = time.monotonic()
             text = await self._run_in_executor(self.stt.transcribe, audio)
             text = text.strip()
             if text:
-                log.info("STT: %s", text)
+                log_duration("pipeline.transcribe_to_text", time.monotonic() - t0)
                 await self.handle_text(text)
+            else:
+                log_duration("pipeline.transcribe_empty", time.monotonic() - t0)
         except Exception:
             log.exception("Audio transcription failed")
         finally:
@@ -192,35 +199,52 @@ class BehaviorController:
         return True
 
     async def handle_text(self, text: str) -> None:
+        t_start = time.monotonic()
+
         if await self._register_name(text):
+            log_duration("pipeline.register_name", time.monotonic() - t_start)
             return
 
         await self._send_think(True)
         try:
+            t0 = time.monotonic()
             intent = await self._run_in_executor(self.llm.classify_intent, text)
+            log_duration("pipeline.classify_intent", time.monotonic() - t0)
 
+            t0 = time.monotonic()
             device_cmd = await self._run_in_executor(self.llm.classify_device_command, text)
             if device_cmd:
+                log_duration("pipeline.classify_device_command", time.monotonic() - t0)
                 await self._execute_device_command(device_cmd)
+            else:
+                log_duration("pipeline.classify_device_command", time.monotonic() - t0)
 
             context: str | None = None
             if intent in ("question",):
+                t0 = time.monotonic()
                 docs = await self._run_in_executor(self.rag.retrieve, text)
+                log_duration("pipeline.rag_retrieve", time.monotonic() - t0)
                 if docs:
                     context = "\n\n".join(docs)
 
+            t0 = time.monotonic()
             response, resolved_intent = await self._run_in_executor(
                 self.llm.generate_response, text, context,
             )
+            log_duration("pipeline.generate_response", time.monotonic() - t0)
 
             if response:
                 log.info("LLM response: %s", response[:100])
                 await self._send_speak(response)
+                t0 = time.monotonic()
                 await self._speak(response)
+                log_duration("pipeline.tts_speak", time.monotonic() - t0)
                 await self._run_in_executor(self.memory.store_interaction, text, response)
 
             anim = self.llm.decide_animation(text, resolved_intent)
             await self.send_animation(anim)
+
+            log_duration("pipeline.handle_text_total", time.monotonic() - t_start)
         except Exception:
             log.exception("handle_text failed")
         finally:

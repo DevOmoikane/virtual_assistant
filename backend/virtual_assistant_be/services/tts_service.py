@@ -8,6 +8,7 @@ import sounddevice as sd
 from piper import PiperVoice, SynthesisConfig
 
 from virtual_assistant_be.core.config import settings
+from virtual_assistant_be.timer import Timer
 
 log = logging.getLogger(__name__)
 
@@ -51,15 +52,16 @@ class TtsService:
         return b"".join(audio_parts)
 
     def speak(self, text: str) -> None:
-        voice = self._ensure_voice()
-        if voice is None:
-            return
+        with Timer("tts.speak"):
+            voice = self._ensure_voice()
+            if voice is None:
+                return
 
-        config = SynthesisConfig()
-        for chunk in voice.synthesize(text, config):
-            audio = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
-            sd.play(audio, samplerate=voice.config.sample_rate)
-            sd.wait()
+            config = SynthesisConfig()
+            for chunk in voice.synthesize(text, config):
+                audio = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
+                sd.play(audio, samplerate=voice.config.sample_rate)
+                sd.wait()
 
     def unload(self) -> None:
         self._voice = None

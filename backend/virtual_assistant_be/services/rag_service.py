@@ -6,6 +6,7 @@ import uuid
 import requests
 
 from virtual_assistant_be.core.config import settings
+from virtual_assistant_be.timer import Timer
 
 log = logging.getLogger(__name__)
 
@@ -88,26 +89,27 @@ class RagService:
         return chunks
 
     def retrieve(self, query: str, k: int = 3) -> list[str]:
-        collection_id = self._ensure_collection()
-        if not collection_id:
-            return []
+        with Timer("rag.retrieve"):
+            collection_id = self._ensure_collection()
+            if not collection_id:
+                return []
 
-        q_embed = self._embed(query)
-        if not isinstance(q_embed[0], list):
-            q_embed = [q_embed]
+            q_embed = self._embed(query)
+            if not isinstance(q_embed[0], list):
+                q_embed = [q_embed]
 
-        try:
-            resp = requests.post(
-                f"{CHROMA_BASE}/{collection_id}/query",
-                json={"query_embeddings": q_embed, "n_results": k},
-                timeout=10,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("documents", [[]])[0]
-        except requests.RequestException as e:
-            log.error("ChromaDB query error: %s", e)
-            return []
+            try:
+                resp = requests.post(
+                    f"{CHROMA_BASE}/{collection_id}/query",
+                    json={"query_embeddings": q_embed, "n_results": k},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("documents", [[]])[0]
+            except requests.RequestException as e:
+                log.error("ChromaDB query error: %s", e)
+                return []
 
     def ingest(self, text: str, source: str) -> int:
         collection_id = self._ensure_collection()

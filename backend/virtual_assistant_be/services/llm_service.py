@@ -6,6 +6,7 @@ from typing import Any
 import requests
 
 from virtual_assistant_be.core.config import settings
+from virtual_assistant_be.timer import Timer
 
 log = logging.getLogger(__name__)
 
@@ -38,25 +39,28 @@ Question: {prompt}"""
 
         messages.append({"role": "user", "content": user_msg})
 
-        try:
-            resp = requests.post(
-                f"{self.base_url}/api/chat",
-                json={"model": self.gen_model, "messages": messages, "stream": False},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            return resp.json()["message"]["content"]
-        except requests.RequestException as e:
-            log.error("Ollama generate error: %s", e)
-            return ""
+        with Timer("llm.generate"):
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/api/chat",
+                    json={"model": self.gen_model, "messages": messages, "stream": False},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                return resp.json()["message"]["content"]
+            except requests.RequestException as e:
+                log.error("Ollama generate error: %s", e)
+                return ""
 
     def classify_intent(self, text: str) -> str:
-        system = (
-            "You classify user input into one of: "
-            "greeting, question, command, opinion, goodbye, other. "
-            "Reply with only the label, no explanation."
-        )
-        return self.generate(text.strip(), system=system).strip().lower()
+        with Timer("llm.classify_intent"):
+            system = (
+                "You classify user input into one of: "
+                "greeting, question, command, opinion, goodbye, other. "
+                "Reply with only the label, no explanation."
+            )
+            result = self.generate(text.strip(), system=system).strip().lower()
+        return result
 
     def decide_animation(self, text: str, intent: str | None = None) -> str:
         if intent is None:
@@ -72,17 +76,18 @@ Question: {prompt}"""
         return mapping.get(intent, "listen")
 
     def classify_device_command(self, text: str) -> dict | None:
-        system = (
-            "You extract device commands from user input. "
-            "Respond with a JSON object with keys 'device', 'action', and optionally 'message'/'contact'/'command'. "
-            "Devices: lights (actions: on/off/toggle), door (actions: open/close), "
-            "send_message (actions: platform like telegram/discord/whatsapp, "
-            "with 'contact' (recipient name) and 'message' fields), "
-            "home_assistant (with 'command' field containing the raw command). "
-            "If no device command is detected, respond with an empty JSON object {}."
-            "Reply with ONLY the JSON, no other text."
-        )
-        response = self.generate(text.strip(), system=system).strip()
+        with Timer("llm.classify_device_command"):
+            system = (
+                "You extract device commands from user input. "
+                "Respond with a JSON object with keys 'device', 'action', and optionally 'message'/'contact'/'command'. "
+                "Devices: lights (actions: on/off/toggle), door (actions: open/close), "
+                "send_message (actions: platform like telegram/discord/whatsapp, "
+                "with 'contact' (recipient name) and 'message' fields), "
+                "home_assistant (with 'command' field containing the raw command). "
+                "If no device command is detected, respond with an empty JSON object {}."
+                "Reply with ONLY the JSON, no other text."
+            )
+            response = self.generate(text.strip(), system=system).strip()
         if not response or response == "{}":
             return None
         try:
@@ -95,9 +100,10 @@ Question: {prompt}"""
         return None
 
     def generate_response(self, user_input: str, context: str | None = None) -> tuple[str, str]:
-        intent = self.classify_intent(user_input)
-        if context:
-            response = self.generate(user_input, context=context)
-        else:
-            response = self.generate(user_input)
+        with Timer("llm.generate_response"):
+            intent = self.classify_intent(user_input)
+            if context:
+                response = self.generate(user_input, context=context)
+            else:
+                response = self.generate(user_input)
         return response, intent

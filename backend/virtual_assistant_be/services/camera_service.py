@@ -99,6 +99,33 @@ class CameraService:
         self._face_miss_streak = 0
         self._last_frame_bgr: np.ndarray | None = None
 
+        self._camera_idx = 0
+        self._audio_device_id: int | None = None
+        self._probe_devices()
+
+    @property
+    def audio_device_id(self) -> int | None:
+        return self._audio_device_id
+
+    def _probe_devices(self) -> None:
+        self._camera_idx, cam_name = self._find_camera()
+        if cam_name:
+            self._audio_device_id = self._find_audio_device(cam_name)
+
+    @staticmethod
+    def _find_audio_device(camera_name: str) -> int | None:
+        import sounddevice as sd
+        name_lower = camera_name.lower()
+        for dev in sd.query_devices():
+            if dev.get("max_input_channels", 0) > 0:
+                dev_name = dev.get("name", "").lower()
+                common = set(name_lower.split()) & set(dev_name.split())
+                if len(common) >= 2:
+                    log.info("Matched audio device %d: %s", dev["index"], dev["name"])
+                    return dev["index"]
+        log.info("No matching audio device found for camera '%s'", camera_name)
+        return None
+
     def set_callback(self, callback: EventCallback) -> None:
         self._callback = callback
 
@@ -135,6 +162,40 @@ class CameraService:
                 asyncio.ensure_future, self._callback(event, data or {})
             )
 
+    @staticmethod
+    def _find_camera() -> tuple[int, str | None]:
+        cfg = settings.camera_device_id
+        if cfg is not None:
+            return cfg, None
+
+        candidates: list[tuple[int, str | None]] = []
+        for idx in range(4):
+            cap = cv2.VideoCapture(idx)
+            ok = cap.isOpened()
+            cap.release()
+            if ok:
+                name = None
+                try:
+                    path = f"/sys/class/video4linux/video{idx}/name"
+                    if os.path.isfile(path):
+                        with open(path) as f:
+                            name = f.read().strip()
+                except Exception:
+                    pass
+                candidates.append((idx, name))
+
+        if not candidates:
+            return 0, None
+
+        for idx, name in reversed(candidates):
+            if name and ("usb" in name.lower() or "webcam" in name.lower() or "camera" in name.lower()):
+                log.info("Selected USB camera at index %d: %s", idx, name)
+                return idx, name
+
+        chosen, chosen_name = candidates[0]
+        log.info("Selected camera index %d%s", chosen, f" ({chosen_name})" if chosen_name else "")
+        return chosen, chosen_name
+
     def _run(self) -> None:
         face_model = settings.face_detection_model
         gesture_model = settings.gesture_recognition_model
@@ -164,12 +225,12 @@ class CameraService:
         except Exception:
             log.warning("Failed to create gesture recognizer", exc_info=True)
 
-        cap = cv2.VideoCapture(settings.camera_device_id or 0)
+        cap = cv2.VideoCapture(self._camera_idx)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, settings.camera_width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.camera_height)
         self._cap = cap
 
-        log.info("Camera opened: %s", cap.isOpened())
+        log.info("Camera %d opened: %s", self._camera_idx, cap.isOpened())
 
         while self._running:
             ret, frame = cap.read()
