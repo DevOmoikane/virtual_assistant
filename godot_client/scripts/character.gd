@@ -10,8 +10,31 @@ var _current_animation: String = "imported/idle_breathing"
 
 
 func _ready() -> void:
+	connect("connected", _on_connected)
+	connect("disconnected", _on_disconnected)
+	connect("execute_action", _on_execute_action)
+	connect("speaking", _on_speaking)
+	connect("listening", _on_listening)
+	connect("thinking", _on_thinking)
 	animation_player.play(_current_animation)
 
+func _on_connected() -> void:
+	pass
+	
+func _on_disconnected() -> void:
+	pass
+	
+func _on_execute_action(action: String) -> void:
+	pass
+	
+func _on_speaking() -> void:
+	pass
+	
+func _on_listening() -> void:
+	pass
+	
+func _on_thinking() -> void:
+	pass
 
 func execute_action(action: String) -> void:
 	match action:

@@ -1,7 +1,6 @@
 extends Node
 
 @export var websocket_url: String = "ws://localhost:7700/api/ws"
-@export var character: Character
 
 var socket: WebSocketPeer = WebSocketPeer.new()
 var should_reconnect: bool = true
@@ -13,6 +12,10 @@ var _was_connected: bool = false
 
 signal connected()
 signal disconnected()
+signal execute_action(action: String)
+signal speaking()
+signal listening()
+signal thinking()
 
 
 func _ready():
@@ -91,24 +94,25 @@ func _handle_message(raw: String):
 	match msg_type:
 		"animation":
 			var anim_name = data.get("name", "idle")
-			if character:
-				character.execute_action(anim_name)
+			emit_signal("execute_action", anim_name)
 		"state":
 			var s = data.get("connected", false)
-			if character:
-				if s:
-					character.set_connected()
-				else:
-					character.set_disconnected()
+			if s:
+				pass
+			else:
+				pass
 		"speak":
 			var text = data.get("text", "")
 			print("Server says: ", text)
+			emit_signal("speaking")
 		"listen":
 			var active = data.get("active", false)
 			print("Mic listening: ", active)
+			emit_signal("listening")
 		"think":
 			var active = data.get("active", false)
 			print("Thinking: ", active)
+			emit_signal("thinking")
 		_:
 			print("Unknown message type: ", msg_type)
 
