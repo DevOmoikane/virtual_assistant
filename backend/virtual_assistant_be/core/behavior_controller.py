@@ -27,6 +27,7 @@ from virtual_assistant_be.services.audio_service import AudioService
 from virtual_assistant_be.services.memory_service import MemoryService
 from virtual_assistant_be.services.command_service import CommandService
 from virtual_assistant_be.services.telegram_service import TelegramService
+from virtual_assistant_be.services.face_service import FaceService
 
 SendFn = Callable[[dict], Awaitable[None]]
 
@@ -42,7 +43,11 @@ class BehaviorController:
         self.rag = RagService()
         self.stt = SttService()
         self.tts = TtsService()
-        self.camera = CameraService(event_callback=self._on_camera_event)
+        self.face_service = FaceService()
+        self.camera = CameraService(
+            event_callback=self._on_camera_event,
+            face_service=self.face_service,
+        )
         self.audio = AudioService(audio_callback=self._on_audio_chunk)
         self.memory = MemoryService()
         self.telegram = TelegramService()
@@ -51,10 +56,18 @@ class BehaviorController:
 
         self._last_person_greeted: float = 0.0
         self._last_gesture_time: float = 0.0
+        self._pending_name: str | None = None
 
     async def _run_in_executor(self, fn, *args):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, fn, *args)
+
+    async def _speak(self, text: str) -> None:
+        self.audio.mute()
+        try:
+            await self._run_in_executor(self.tts.speak, text)
+        finally:
+            self.audio.unmute()
 
     def set_send_fn(self, send_fn: SendFn) -> None:
         self._send = send_fn
@@ -64,21 +77,31 @@ class BehaviorController:
 
         match event:
             case "person_appeared":
-                await self._on_person_appeared()
+                await self._on_person_appeared(data)
             case "person_disappeared":
                 await self._on_person_disappeared()
             case "gesture_detected":
                 await self._on_gesture(data)
 
-    async def _on_person_appeared(self) -> None:
+    async def _on_person_appeared(self, data: dict) -> None:
         now = time.monotonic()
         if now - self._last_person_greeted < 30.0:
             return
         self._last_person_greeted = now
         await self._run_in_executor(self.memory.store_person_event, "appeared")
-        await self.send_animation("greet")
-        await self._run_in_executor(self.tts.speak, "Hello there!")
-        await self._send_speak("Hello there!")
+
+        name = data.get("name")
+        if name:
+            await self.send_animation("greet")
+            msg = f"Hello {name}!"
+            await self._speak(msg)
+            await self._send_speak(msg)
+        else:
+            await self.send_animation("greet")
+            await self._speak("Hello there! What's your name?")
+            await self._send_speak("Hello there! What's your name?")
+            self._pending_name = None
+            await self._send_listen(True)
 
     async def _on_person_disappeared(self) -> None:
         await self._run_in_executor(self.memory.store_person_event, "disappeared")
@@ -96,11 +119,11 @@ class BehaviorController:
         match gesture:
             case "wave":
                 await self.send_animation("greet")
-                await self._run_in_executor(self.tts.speak, "I see you waving!")
+                await self._speak("I see you waving!")
                 await self._send_speak("I see you waving!")
             case "thumbs_up":
                 await self.send_animation("nod")
-                await self._run_in_executor(self.tts.speak, "Got it!")
+                await self._speak("Got it!")
                 await self._send_speak("Got it!")
             case "open_palm":
                 await self.send_animation("listen")
@@ -116,7 +139,7 @@ class BehaviorController:
         if self._send:
             msg = f"Message from {sender} on Telegram: {text}"
             await self._send_speak(msg)
-            await self._run_in_executor(self.tts.speak, msg)
+            await self._speak(msg)
 
     async def _on_audio_chunk(self, audio: np.ndarray) -> None:
         await self._send_listen(True)
@@ -150,7 +173,28 @@ class BehaviorController:
             case _:
                 log.warning("Unknown command: %s", msg.name)
 
+    async def _register_name(self, text: str) -> bool:
+        if not self._pending_name or not self.face_service.enabled:
+            return False
+        name = text.strip().title()
+        emb = self.face_service.last_unknown_embedding
+        if emb is not None:
+            ok = await self._run_in_executor(self.face_service.register, name, emb)
+            if ok:
+                msg = f"Nice to meet you, {name}!"
+                await self._send_speak(msg)
+                await self._speak(msg)
+            else:
+                await self._send_speak("Sorry, I couldn't save your name.")
+                await self._speak("Sorry, I couldn't save your name.")
+        self._pending_name = None
+        await self._send_listen(False)
+        return True
+
     async def handle_text(self, text: str) -> None:
+        if await self._register_name(text):
+            return
+
         await self._send_think(True)
         try:
             intent = await self._run_in_executor(self.llm.classify_intent, text)
@@ -172,7 +216,7 @@ class BehaviorController:
             if response:
                 log.info("LLM response: %s", response[:100])
                 await self._send_speak(response)
-                await self._run_in_executor(self.tts.speak, response)
+                await self._speak(response)
                 await self._run_in_executor(self.memory.store_interaction, text, response)
 
             anim = self.llm.decide_animation(text, resolved_intent)
@@ -221,7 +265,7 @@ class BehaviorController:
         await self._run_in_executor(self.telegram.start_polling)
 
         try:
-            await self._run_in_executor(self.tts.speak, _GREETING)
+            await self._speak(_GREETING)
             await self._send_speak(_GREETING)
         except Exception:
             log.warning("TTS not available, skipping greeting speech")

@@ -20,6 +20,7 @@ FRAME_SIZE = 480
 SILENCE_THRESHOLD = 0.01
 SILENCE_TIMEOUT = 1.0
 MIN_SPEECH_DURATION = 0.5
+MAX_SPEECH_DURATION = 15.0
 
 
 class AudioService:
@@ -32,8 +33,11 @@ class AudioService:
         self._buffer: np.ndarray = np.array([], dtype=np.float32)
         self._buffer_lock = threading.Lock()
         self._speech_buffer: np.ndarray = np.array([], dtype=np.float32)
-        self._silence_frames = 0
+        self._silence_frames = 0.0
+        self._speech_duration = 0.0
         self._speech_active = False
+        self._muted = False
+        self._mute_lock = threading.Lock()
 
     def set_callback(self, callback: AudioCallback) -> None:
         self._callback = callback
@@ -66,18 +70,38 @@ class AudioService:
         with self._buffer_lock:
             self._buffer = np.append(self._buffer, indata[:, 0].copy())
 
+    def mute(self) -> None:
+        with self._mute_lock:
+            self._muted = True
+
+    def unmute(self) -> None:
+        with self._mute_lock:
+            self._muted = False
+
     def _process_vad(self, chunk: np.ndarray) -> None:
+        with self._mute_lock:
+            if self._muted:
+                return
         rms = np.sqrt(np.mean(chunk**2))
         is_speech = rms > SILENCE_THRESHOLD
+        frame_duration = len(chunk) / SAMPLE_RATE
 
         if is_speech:
             self._speech_buffer = np.append(self._speech_buffer, chunk)
-            self._silence_frames = 0
+            self._silence_frames = 0.0
+            self._speech_duration += frame_duration
             if not self._speech_active:
                 self._speech_active = True
+            if self._speech_duration >= MAX_SPEECH_DURATION:
+                log.info("Speech segment: %.2fs (max duration)", len(self._speech_buffer) / SAMPLE_RATE)
+                self._emit(self._speech_buffer.copy())
+                self._speech_buffer = np.array([], dtype=np.float32)
+                self._speech_active = False
+                self._silence_frames = 0.0
+                self._speech_duration = 0.0
         else:
             if self._speech_active:
-                self._silence_frames += len(chunk) / SAMPLE_RATE
+                self._silence_frames += frame_duration
                 self._speech_buffer = np.append(self._speech_buffer, chunk)
 
                 if self._silence_frames >= SILENCE_TIMEOUT:
@@ -88,7 +112,8 @@ class AudioService:
 
                     self._speech_buffer = np.array([], dtype=np.float32)
                     self._speech_active = False
-                    self._silence_frames = 0
+                    self._silence_frames = 0.0
+                    self._speech_duration = 0.0
 
     def _run(self) -> None:
         try:

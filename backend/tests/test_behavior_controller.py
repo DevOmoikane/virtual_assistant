@@ -77,15 +77,51 @@ class TestBehaviorController:
             assert mock_think.await_count == 2
 
     @pytest.mark.asyncio
-    async def test_on_person_appeared(self, controller):
+    async def test_on_person_appeared_known(self, controller):
         with (
             patch.object(controller, "send_animation") as mock_anim,
             patch.object(controller, "_send_speak") as mock_speak,
             patch.object(controller.tts, "speak"),
+            patch.object(controller.memory, "store_person_event"),
         ):
-            await controller._on_person_appeared()
+            await controller._on_person_appeared(data={"name": "Alice"})
             mock_anim.assert_called_once_with("greet")
-            assert mock_speak.await_count >= 1
+            mock_speak.assert_awaited_once_with("Hello Alice!")
+
+    @pytest.mark.asyncio
+    async def test_on_person_appeared_unknown(self, controller):
+        with (
+            patch.object(controller, "send_animation") as mock_anim,
+            patch.object(controller, "_send_speak") as mock_speak,
+            patch.object(controller, "_send_listen") as mock_listen,
+            patch.object(controller.tts, "speak"),
+            patch.object(controller.memory, "store_person_event"),
+        ):
+            await controller._on_person_appeared(data={})
+            mock_anim.assert_called_once_with("greet")
+            mock_speak.assert_awaited_once_with("Hello there! What's your name?")
+            mock_listen.assert_awaited_once_with(True)
+
+    @pytest.mark.asyncio
+    async def test_register_name_saves_and_greets(self, controller):
+        with (
+            patch.object(controller, "_send_speak") as mock_speak,
+            patch.object(controller, "_send_listen") as mock_listen,
+            patch.object(controller.tts, "speak"),
+            patch.object(controller.face_service, "register", return_value=True),
+        ):
+            controller._pending_name = True
+            controller.face_service.last_unknown_embedding = [0.1, 0.2, 0.3]
+            ok = await controller._register_name("bob")
+            assert ok is True
+            mock_speak.assert_awaited_once_with("Nice to meet you, Bob!")
+            mock_listen.assert_awaited_once_with(False)
+
+    @pytest.mark.asyncio
+    async def test_register_name_skipped_when_not_pending(self, controller):
+        controller._pending_name = None
+        ok = await controller._register_name("bob")
+        assert ok is False
 
     @pytest.mark.asyncio
     async def test_on_gesture_wave(self, controller):

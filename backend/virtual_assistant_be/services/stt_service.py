@@ -26,26 +26,36 @@ class SttService:
         return self._model
 
     def transcribe(self, audio: np.ndarray) -> str:
+        log.info("Transcribing audio")
         model = self._ensure_model()
 
         if len(audio) == 0:
+            log.info("No audio available, it is empty")
             return ""
 
+        peak = np.max(np.abs(audio))
+        if peak > 0:
+            log.info("Audio has good volume")
+            audio = audio / peak * 0.95
+
+        log.info("... modle transcribing")
         segments, _info = model.transcribe(
             audio,
             language="en",
             beam_size=1,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
         )
 
+        log.info("... merging segments")
         texts: list[str] = []
         for segment in segments:
             t = segment.text.strip()
             if t:
                 texts.append(t)
+        
+        joined_texts: str = " ".join(texts)
+        log.info("Transcription: %s", joined_texts)
 
-        return " ".join(texts)
+        return joined_texts
 
     def unload(self) -> None:
         self._model = None

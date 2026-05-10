@@ -208,10 +208,11 @@ class TestCameraServiceLifecycle:
 
         mp_image = MagicMock()
         with patch.object(svc, '_emit') as mock_emit:
-            svc._process_faces(mp_image)
+            for _ in range(3):
+                svc._process_faces(mp_image)
 
         assert svc._person_present is True
-        mock_emit.assert_called_once_with("person_appeared")
+        mock_emit.assert_called_once_with("person_appeared", {})
 
     def test_person_disappeared_event(self):
         detection = MagicMock()
@@ -225,7 +226,8 @@ class TestCameraServiceLifecycle:
 
         mp_image = MagicMock()
         with patch.object(svc, '_emit') as mock_emit:
-            svc._process_faces(mp_image)
+            for _ in range(10):
+                svc._process_faces(mp_image)
 
         assert svc._person_present is False
         mock_emit.assert_called_once_with("person_disappeared")
@@ -258,7 +260,8 @@ class TestCameraServiceLifecycle:
 
         mp_image = MagicMock()
         with patch.object(svc, '_emit'):
-            svc._process_faces(mp_image)
+            for _ in range(3):
+                svc._process_faces(mp_image)
 
         assert svc._wave_history == []
 

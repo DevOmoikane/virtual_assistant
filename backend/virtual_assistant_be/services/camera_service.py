@@ -81,8 +81,10 @@ def _download_models() -> bool:
 
 
 class CameraService:
-    def __init__(self, event_callback: EventCallback | None = None) -> None:
+    def __init__(self, event_callback: EventCallback | None = None,
+                 face_service=None) -> None:
         self._callback = event_callback
+        self._face_service = face_service
         self._running = False
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -93,6 +95,9 @@ class CameraService:
 
         self._person_present = False
         self._wave_history: list[float] = []
+        self._face_hit_streak = 0
+        self._face_miss_streak = 0
+        self._last_frame_bgr: np.ndarray | None = None
 
     def set_callback(self, callback: EventCallback) -> None:
         self._callback = callback
@@ -172,6 +177,7 @@ class CameraService:
                 self._running = False
                 break
 
+            self._last_frame_bgr = frame
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
@@ -189,15 +195,34 @@ class CameraService:
             result = self._face_detector.detect(mp_image)
             faces_detected = len(result.detections) > 0
 
-            if faces_detected and not self._person_present:
-                self._person_present = True
-                self._emit("person_appeared")
-                self._wave_history.clear()
-            elif not faces_detected and self._person_present:
-                self._person_present = False
-                self._emit("person_disappeared")
+            if faces_detected:
+                self._face_hit_streak += 1
+                self._face_miss_streak = 0
+                if not self._person_present and self._face_hit_streak >= 3:
+                    self._person_present = True
+                    self._wave_history.clear()
+                    name = self._recognize_face()
+                    self._emit("person_appeared", {"name": name} if name else {})
+            else:
+                self._face_miss_streak += 1
+                self._face_hit_streak = 0
+                if self._person_present and self._face_miss_streak >= 10:
+                    self._person_present = False
+                    self._emit("person_disappeared")
         except Exception:
             pass
+
+    def _recognize_face(self) -> str | None:
+        if not self._face_service or not self._face_service.enabled:
+            return None
+        frame = self._last_frame_bgr
+        if frame is None:
+            return None
+        emb = self._face_service.get_embedding(frame)
+        if emb is None:
+            return None
+        name, _dist = self._face_service.recognize(emb)
+        return name
 
     def _process_gestures(self, mp_image: mp.Image) -> None:
         if self._gesture_recognizer is None:
