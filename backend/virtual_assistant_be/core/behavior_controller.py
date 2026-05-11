@@ -52,6 +52,7 @@ class BehaviorController:
         self.audio = AudioService(
             audio_callback=self._on_audio_chunk,
             device_id=self.camera.audio_device_id,
+            interrupt_callback=self._on_barge_in,
         )
         self.memory = MemoryService()
         self.telegram = TelegramService()
@@ -72,6 +73,17 @@ class BehaviorController:
             await self._run_in_executor(self.tts.speak, text)
         finally:
             self.audio.unmute()
+
+    def _on_barge_in(self) -> None:
+        """Called from audio thread when user speaks loudly during TTS."""
+        if self.audio._loop and not self.audio._loop.is_closed():
+            asyncio.run_coroutine_threadsafe(self._interrupt_speech(), self.audio._loop)
+
+    async def _interrupt_speech(self) -> None:
+        log.info("Interrupted by user")
+        self.tts.stop()
+        self.audio.unmute()
+        await self._send_listen(True)
 
     def set_send_fn(self, send_fn: SendFn) -> None:
         self._send = send_fn
@@ -130,7 +142,10 @@ class BehaviorController:
                 await self._speak("Got it!")
                 await self._send_speak("Got it!")
             case "open_palm":
-                await self.send_animation("listen")
+                if self.tts.is_speaking:
+                    await self._interrupt_speech()
+                else:
+                    await self.send_animation("listen")
             case "point":
                 await self.send_animation("think")
             case "fist":

@@ -18,6 +18,8 @@ class TtsService:
         self._voice: PiperVoice | None = None
         self._available: bool = False
         self.voice_path = settings.piper_voice_path
+        self._stop_requested = False
+        self._playing = False
 
     def _ensure_voice(self) -> PiperVoice | None:
         if self._voice is not None:
@@ -51,17 +53,32 @@ class TtsService:
 
         return b"".join(audio_parts)
 
+    @property
+    def is_speaking(self) -> bool:
+        return self._playing
+
+    def stop(self) -> None:
+        self._stop_requested = True
+        sd.stop()
+
     def speak(self, text: str) -> None:
         with Timer("tts.speak"):
             voice = self._ensure_voice()
             if voice is None:
                 return
 
+            self._stop_requested = False
+            self._playing = True
             config = SynthesisConfig()
-            for chunk in voice.synthesize(text, config):
-                audio = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
-                sd.play(audio, samplerate=voice.config.sample_rate)
-                sd.wait()
+            try:
+                for chunk in voice.synthesize(text, config):
+                    if self._stop_requested:
+                        break
+                    audio = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
+                    sd.play(audio, samplerate=voice.config.sample_rate)
+                    sd.wait()
+            finally:
+                self._playing = False
 
     def unload(self) -> None:
         self._voice = None
