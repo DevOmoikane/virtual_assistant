@@ -26,20 +26,20 @@ class SttService:
             log.info("Whisper model loaded")
         return self._model
 
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray) -> tuple[str, str]:
         with Timer("stt.transcribe"):
             model = self._ensure_model()
 
             if len(audio) == 0:
-                return ""
+                return "", ""
 
             peak = np.max(np.abs(audio))
             if peak > 0:
                 audio = audio / peak * 0.95
 
-            segments, _info = model.transcribe(
+            segments, info = model.transcribe(
                 audio,
-                language="en",
+                language=None,
                 beam_size=1,
             )
 
@@ -50,10 +50,11 @@ class SttService:
                     texts.append(t)
 
             joined_texts: str = " ".join(texts)
+            language: str = info.language if info else ""
             if joined_texts:
-                log.info("STT result: %s", joined_texts)
+                log.info("STT result: %s (lang: %s)", joined_texts, language)
 
-        return joined_texts
+        return joined_texts, language
 
     def unload(self) -> None:
         self._model = None

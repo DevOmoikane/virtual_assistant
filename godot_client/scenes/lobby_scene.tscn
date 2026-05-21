@@ -27,7 +27,6 @@ environment = SubResource("Environment_d4cga")
 
 [node name="websocket" type="Node" parent="." unique_id=1824585638]
 script = ExtResource("2_g76d4")
-websocket_url = "ws://10.73.19.131:7700/api/ws"
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=392157064]
 transform = Transform3D(1, 0, 0, 0, 0.02726537, 0, 0, 0, 1, 0, -0.019797564, 0)

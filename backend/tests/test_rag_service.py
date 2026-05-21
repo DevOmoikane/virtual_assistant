@@ -4,21 +4,22 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from virtual_assistant_be.services.rag_service import RagService
+from virtual_assistant_be.services.rag_service import RagService, chunk_text, clean_text
+
+
+def _make_mock_client():
+    """Return a mock OpenSearch client that looks like it has an index."""
+    client = MagicMock()
+    client.indices.exists.return_value = True
+    client.search.return_value = {"hits": {"hits": []}}
+    client.delete_by_query.return_value = {"deleted": 0}
+    return client
 
 
 @pytest.fixture
 def service():
     svc = RagService()
-    svc._collection_id = "test-collection-id"
-    return svc
-
-
-@pytest.fixture
-def service_no_collection():
-    svc = RagService()
-    svc._collection_id = ""
-    svc._ensure_collection = lambda: ""
+    svc._client = _make_mock_client()
     return svc
 
 
@@ -42,47 +43,62 @@ class TestRagService:
             assert result == [[0.1], [0.2]]
 
     def test_retrieve_returns_documents(self, service):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"documents": [["doc1", "doc2", "doc3"]]}
-        mock_resp.raise_for_status.return_value = None
+        text_hits = [
+            {"_id": "1", "_score": 2.0, "_source": {"text": "doc1"}},
+            {"_id": "2", "_score": 1.5, "_source": {"text": "doc2"}},
+        ]
+        knn_hits = [
+            {"_id": "3", "_score": 3.0, "_source": {"text": "doc3"}},
+        ]
+        service._client.search.side_effect = [
+            {"hits": {"hits": text_hits}},
+            {"hits": {"hits": knn_hits}},
+        ]
 
-        with patch("virtual_assistant_be.services.rag_service.requests.post", return_value=mock_resp) as mock_post:
-            with patch.object(service, "_embed", return_value=[[0.1, 0.2]]):
-                result = service.retrieve("test query", k=3)
-                assert result == ["doc1", "doc2", "doc3"]
+        with patch.object(service, "_embed", return_value=[0.1, 0.2, 0.3]):
+            result = service.retrieve("test query", k=3)
+            assert result == ["doc3", "doc1", "doc2"]
 
-                call_kwargs = mock_post.call_args[1]
-                assert call_kwargs["json"]["n_results"] == 3
-
-    def test_retrieve_empty_on_no_collection(self, service_no_collection):
-        result = service_no_collection.retrieve("test")
+    def test_retrieve_empty_on_no_client(self, service):
+        service._client = _make_mock_client()
+        service._client.indices.exists.return_value = False
+        result = service.retrieve("test")
         assert result == []
 
     def test_retrieve_empty_on_error(self, service):
-        import requests as req_lib
-        with patch("virtual_assistant_be.services.rag_service.requests.post", side_effect=req_lib.exceptions.ConnectionError("error")):
-            with patch.object(service, "_embed", return_value=[[0.1]]):
-                result = service.retrieve("test")
-                assert result == []
+        service._client.search.side_effect = Exception("error")
+        with patch.object(service, "_embed", return_value=[0.1]):
+            result = service.retrieve("test")
+            assert result == []
 
     def test_ingest_chunks_and_adds(self, service):
-        with patch("virtual_assistant_be.services.rag_service.requests.post", return_value=MagicMock()) as mock_post:
-            with patch.object(service, "_embed", return_value=[[0.1], [0.2]]):
+        with patch("virtual_assistant_be.services.rag_service.helpers.bulk", return_value=(3, [])) as mock_bulk:
+            with patch.object(service, "_embed", return_value=[[0.1], [0.2], [0.3]]):
                 n = service.ingest("hello world how are you today", source="test.txt")
                 assert n > 0
-                mock_post.assert_called_once()
+                mock_bulk.assert_called_once()
 
-    def test_ingest_returns_zero_on_no_collection(self, service_no_collection):
-        n = service_no_collection.ingest("test", source="test.txt")
-        assert n == 0
+    def test_ingest_returns_zero_on_no_client(self, service):
+        with patch.object(service, "_get_client", return_value=None):
+            n = service.ingest("test", source="test.txt")
+            assert n == 0
 
-    def test_chunk_text(self, service):
+    def test_chunk_text(self):
         text = "word " * 1000
-        chunks = service._chunk_text(text, chunk_size=100, overlap=20)
+        chunks = chunk_text(text, chunk_size=100, overlap=20)
         assert len(chunks) > 0
         assert all(len(c.split()) <= 100 for c in chunks)
 
+    def test_clean_text_removes_hyphenated_breaks(self):
+        result = clean_text("exam-\nple")
+        assert "exam-\nple" not in result
+        assert "example" in result
+
     def test_ask_without_context(self, service):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"response": ""}
+        mock_resp.raise_for_status.return_value = None
         with patch.object(service, "retrieve", return_value=[]):
-            result = service.ask("test question")
-            assert result == ""
+            with patch("virtual_assistant_be.services.rag_service.requests.post", return_value=mock_resp):
+                result = service.ask("test question")
+                assert result == ""

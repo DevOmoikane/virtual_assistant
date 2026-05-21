@@ -7,6 +7,8 @@ from typing import Callable, Awaitable
 
 import numpy as np
 
+from virtual_assistant_be.core.config import settings
+from virtual_assistant_be.core.translations import translate as t
 from virtual_assistant_be.timer import Timer, log_duration
 from virtual_assistant_be.core.protocol import (
     GoEvent,
@@ -34,8 +36,6 @@ SendFn = Callable[[dict], Awaitable[None]]
 
 log = logging.getLogger(__name__)
 
-_GREETING = "Hello! I'm ready to help."
-
 
 class BehaviorController:
     def __init__(self, send_fn: SendFn | None = None) -> None:
@@ -62,15 +62,20 @@ class BehaviorController:
         self._last_person_greeted: float = 0.0
         self._last_gesture_time: float = 0.0
         self._pending_name: str | None = None
+        self._current_language: str = settings.piper_default_language
 
     async def _run_in_executor(self, fn, *args):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, fn, *args)
 
-    async def _speak(self, text: str) -> None:
+    def _lang(self, language: str | None = None) -> str:
+        return language or self._current_language
+
+    async def _speak(self, text: str, language: str | None = None) -> None:
+        lang = self._lang(language)
         self.audio.mute()
         try:
-            await self._run_in_executor(self.tts.speak, text)
+            await self._run_in_executor(self.tts.speak, text, lang)
         finally:
             self.audio.unmute()
 
@@ -109,13 +114,14 @@ class BehaviorController:
         name = data.get("name")
         if name:
             await self.send_animation("greet")
-            msg = f"Hello {name}!"
+            msg = t("hello_name", self._lang(), name=name)
             await self._speak(msg)
             await self._send_speak(msg)
         else:
             await self.send_animation("greet")
-            await self._speak("Hello there! What's your name?")
-            await self._send_speak("Hello there! What's your name?")
+            msg = t("hello_unknown", self._lang())
+            await self._speak(msg)
+            await self._send_speak(msg)
             self._pending_name = None
             await self._send_listen(True)
 
@@ -135,12 +141,14 @@ class BehaviorController:
         match gesture:
             case "wave":
                 await self.send_animation("greet")
-                await self._speak("I see you waving!")
-                await self._send_speak("I see you waving!")
+                msg = t("gesture_wave", self._lang())
+                await self._speak(msg)
+                await self._send_speak(msg)
             case "thumbs_up":
                 await self.send_animation("nod")
-                await self._speak("Got it!")
-                await self._send_speak("Got it!")
+                msg = t("gesture_thumbs_up", self._lang())
+                await self._speak(msg)
+                await self._send_speak(msg)
             case "open_palm":
                 if self.tts.is_speaking:
                     await self._interrupt_speech()
@@ -156,7 +164,7 @@ class BehaviorController:
     async def _on_telegram_message(self, sender: str, text: str, chat_id: int) -> None:
         log.info("Telegram from %s: %s", sender, text)
         if self._send:
-            msg = f"Message from {sender} on Telegram: {text}"
+            msg = t("telegram_message", self._lang(), sender=sender, text=text)
             await self._send_speak(msg)
             await self._speak(msg)
 
@@ -164,11 +172,12 @@ class BehaviorController:
         await self._send_listen(True)
         try:
             t0 = time.monotonic()
-            text = await self._run_in_executor(self.stt.transcribe, audio)
+            text, language = await self._run_in_executor(self.stt.transcribe, audio)
             text = text.strip()
             if text:
+                self._current_language = language or self._current_language
                 log_duration("pipeline.transcribe_to_text", time.monotonic() - t0)
-                await self.handle_text(text)
+                await self.handle_text(text, language)
             else:
                 log_duration("pipeline.transcribe_empty", time.monotonic() - t0)
         except Exception:
@@ -203,17 +212,18 @@ class BehaviorController:
         if emb is not None:
             ok = await self._run_in_executor(self.face_service.register, name, emb)
             if ok:
-                msg = f"Nice to meet you, {name}!"
+                msg = t("register_success", self._lang(), name=name)
                 await self._send_speak(msg)
                 await self._speak(msg)
             else:
-                await self._send_speak("Sorry, I couldn't save your name.")
-                await self._speak("Sorry, I couldn't save your name.")
+                msg = t("register_failure", self._lang())
+                await self._send_speak(msg)
+                await self._speak(msg)
         self._pending_name = None
         await self._send_listen(False)
         return True
 
-    async def handle_text(self, text: str) -> None:
+    async def handle_text(self, text: str, language: str | None = None) -> None:
         t_start = time.monotonic()
 
         if await self._register_name(text):
@@ -252,7 +262,7 @@ class BehaviorController:
                 log.info("LLM response: %s", response[:100])
                 await self._send_speak(response)
                 t0 = time.monotonic()
-                await self._speak(response)
+                await self._speak(response, language)
                 log_duration("pipeline.tts_speak", time.monotonic() - t0)
                 await self._run_in_executor(self.memory.store_interaction, text, response)
 
@@ -304,8 +314,9 @@ class BehaviorController:
         await self._run_in_executor(self.telegram.start_polling)
 
         try:
-            await self._speak(_GREETING)
-            await self._send_speak(_GREETING)
+            msg = t("greeting_ready", self._lang())
+            await self._speak(msg)
+            await self._send_speak(msg)
         except Exception:
             log.warning("TTS not available, skipping greeting speech")
 

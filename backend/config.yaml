@@ -3,12 +3,18 @@ port: 7700
 
 ollama:
   url: "http://localhost:11434"
-  gen_model: "llama3.1"
+  # gen_model: "llama3.1"
+  gen_model: "llama3.2"
   embed_model: "nomic-embed-text"
 
 chroma:
   url: "http://localhost:8100"
   collection: "rag_docs"
+
+opensearch:
+  host: "localhost"
+  port: 9200
+  index: "documents"
 
 stt:
   model_size: "base"
@@ -16,7 +22,13 @@ stt:
   chunk_duration: 3.0
   device_id: null
 
-piper_voice_path: "./tools/piper/en_US-lessac-medium.onnx"
+piper:
+  default_language: "es"
+  voices:
+    en: "./tools/piper/en_US-lessac-medium.onnx"
+    # en: "./tools/piper/en_US-eminem-medium.onnx"
+    es: "./tools/piper/es_MX-claude-high.onnx"
+    fr: "./tools/piper/fr_FR-gilles-low.onnx"
 
 camera:
   device_id: null

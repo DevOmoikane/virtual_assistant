@@ -15,34 +15,44 @@ log = logging.getLogger(__name__)
 
 class TtsService:
     def __init__(self) -> None:
-        self._voice: PiperVoice | None = None
-        self._available: bool = False
-        self.voice_path = settings.piper_voice_path
+        self._voices: dict[str, PiperVoice] = {}
+        self._voice_paths: dict[str, str] = dict(settings.piper_voices or {})
+        self._default_language: str = settings.piper_default_language
         self._stop_requested = False
         self._playing = False
 
-    def _ensure_voice(self) -> PiperVoice | None:
-        if self._voice is not None:
-            return self._voice
+    def _ensure_voice(self, language: str) -> PiperVoice | None:
+        if language in self._voices:
+            return self._voices[language]
 
-        if not os.path.isfile(self.voice_path):
-            log.warning("Piper voice file not found: %s", self.voice_path)
-            self._available = False
+        path = self._voice_paths.get(language)
+        if not path:
+            language = self._default_language
+            if language in self._voices:
+                return self._voices[language]
+            path = self._voice_paths.get(language)
+            if not path:
+                log.warning("No voice path configured for language '%s'", language)
+                return None
+
+        if not os.path.isfile(path):
+            log.warning("Piper voice file not found: %s", path)
             return None
 
         try:
-            log.info("Loading piper voice from '%s' ...", self.voice_path)
-            self._voice = PiperVoice.load(self.voice_path)
-            self._available = True
-            log.info("Piper voice loaded (sample rate: %d)", self._voice.config.sample_rate)
+            log.info("Loading piper voice for '%s' from '%s' ...", language, path)
+            voice = PiperVoice.load(path)
+            self._voices[language] = voice
+            log.info("Piper voice loaded (sample rate: %d)", voice.config.sample_rate)
         except Exception:
-            log.warning("Failed to load piper voice", exc_info=True)
-            self._available = False
+            log.warning("Failed to load piper voice for '%s'", language, exc_info=True)
+            return None
 
-        return self._voice
+        return voice
 
-    def synthesize(self, text: str) -> bytes:
-        voice = self._ensure_voice()
+    def synthesize(self, text: str, language: str | None = None) -> bytes:
+        lang = language or self._default_language
+        voice = self._ensure_voice(lang)
         if voice is None:
             return b""
 
@@ -61,9 +71,10 @@ class TtsService:
         self._stop_requested = True
         sd.stop()
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, language: str | None = None) -> None:
+        lang = language or self._default_language
         with Timer("tts.speak"):
-            voice = self._ensure_voice()
+            voice = self._ensure_voice(lang)
             if voice is None:
                 return
 
@@ -81,5 +92,4 @@ class TtsService:
                 self._playing = False
 
     def unload(self) -> None:
-        self._voice = None
-        self._available = False
+        self._voices.clear()

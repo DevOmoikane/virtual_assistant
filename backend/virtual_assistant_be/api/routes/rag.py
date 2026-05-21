@@ -19,6 +19,9 @@ tools_router = APIRouter(tags=["tools"])
 _HERE = os.path.dirname(__file__)
 _TEMPLATE = os.path.join(_HERE, "..", "templates", "rag.html")
 
+rag = RagService()
+memory = MemoryService()
+
 
 @tools_router.get("/tools/rag", response_class=HTMLResponse)
 async def rag_tools_page():
@@ -28,9 +31,6 @@ async def rag_tools_page():
     except FileNotFoundError:
         return HTMLResponse("<h1>Template not found</h1>", status_code=404)
 
-rag = RagService()
-memory = MemoryService()
-
 
 class IngestRequest(BaseModel):
     text: str
@@ -39,13 +39,14 @@ class IngestRequest(BaseModel):
 
 class AskRequest(BaseModel):
     query: str
+    use_rag: bool = True
 
 
 @router.post("/ingest")
 async def ingest(req: IngestRequest):
     chunks = rag.ingest(req.text, source=req.source)
     if chunks == 0:
-        raise HTTPException(500, "Ingestion failed — is ChromaDB running?")
+        raise HTTPException(500, "Ingestion failed — is OpenSearch running?")
     return {"chunks": chunks, "source": req.source}
 
 
@@ -72,10 +73,22 @@ async def ingest_file(file: UploadFile = File(...)):
 
         chunks = rag.ingest(text, source=file.filename or "upload")
         if chunks == 0:
-            raise HTTPException(500, "Ingestion failed — is ChromaDB running?")
+            raise HTTPException(500, "Ingestion failed — is OpenSearch running?")
         return {"chunks": chunks, "source": file.filename, "type": SUPPORTED_EXTENSIONS[ext]}
     finally:
         os.unlink(tmp.name)
+
+
+@router.get("/documents")
+async def list_documents():
+    docs = rag.list_documents()
+    return {"documents": docs}
+
+
+@router.delete("/documents/{name}")
+async def delete_document(name: str):
+    deleted = rag.delete(name)
+    return {"deleted": deleted, "document": name}
 
 
 @router.get("/memory/person-count")
@@ -100,24 +113,33 @@ async def recent_visits(n: int = 10):
 
 @router.post("/ask")
 async def ask(req: AskRequest):
-    memory_docs = memory.search(req.query, k=3)
-    doc_docs = rag.retrieve(req.query, k=3)
+    if req.use_rag:
+        doc_docs = rag.retrieve(req.query, k=5)
+        memory_docs = memory.search(req.query, k=3)
 
-    all_context = []
-    seen = set()
-    for d in memory_docs + doc_docs:
-        if d not in seen:
-            seen.add(d)
-            all_context.append(d)
+        all_context = []
+        seen = set()
+        for d in doc_docs + memory_docs:
+            if d not in seen:
+                seen.add(d)
+                all_context.append(d)
 
-    if not all_context:
-        return {"answer": "", "context": []}
+        if not all_context:
+            return {"answer": ""}
 
-    prompt = (
-        f"Only answer using the context below. If the answer is not in the context, say you don't know.\n\n"
-        f"Context:\n{''.join(all_context)}\n\n"
-        f"Question: {req.query}"
-    )
+        context_str = "\n\n".join(all_context)
+        prompt = (
+            "Only answer using the context below. If the answer is not in the context, "
+            "say you don't know.\n\n"
+            f"Context:\n{context_str}\n\n"
+            f"User: {req.query}\nAssistant:"
+        )
+    else:
+        prompt = (
+            "You are a knowledgeable chatbot assistant. "
+            "Answer the question to the best of your knowledge.\n\n"
+            f"User: {req.query}\nAssistant:"
+        )
 
     try:
         resp = requests.post(
@@ -127,6 +149,6 @@ async def ask(req: AskRequest):
         )
         resp.raise_for_status()
         answer = resp.json()["response"]
-        return {"answer": answer, "context": all_context}
+        return {"answer": answer}
     except Exception:
-        return {"answer": "", "context": all_context}
+        return {"answer": ""}

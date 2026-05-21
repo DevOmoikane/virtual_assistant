@@ -21,7 +21,8 @@ dependencies = [
     "python-docx",
     "odfpy",
     "python-multipart",
-    "pyyaml"
+    "pyyaml",
+    "opensearch-py"
 ]
 
 [dependency-groups]

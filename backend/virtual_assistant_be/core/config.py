@@ -32,15 +32,17 @@ class Settings:
     chroma_url: str = "http://localhost:8000"
     chroma_collection: str = "rag_docs"
 
+    opensearch_host: str = "localhost"
+    opensearch_port: int = 9200
+    opensearch_index: str = "documents"
+
     stt_model_size: str = "base"
     stt_sample_rate: int = 16000
     stt_chunk_duration: float = 3.0
     stt_device_id: int | None = None
 
-    piper_voice_path: str = os.getenv(
-        "PIPER_VOICE_PATH",
-        os.path.expanduser("./tools/piper/en_US-lessac-medium.onnx"),
-    )
+    piper_default_language: str = "en"
+    piper_voices: dict[str, str] | None = None
 
     camera_device_id: int | None = None
     camera_width: int = 640
@@ -66,15 +68,28 @@ class Settings:
         self.chroma_url = chroma.get("url", self.chroma_url)
         self.chroma_collection = chroma.get("collection", self.chroma_collection)
 
+        os_cfg = cfg.get("opensearch", {})
+        self.opensearch_host = os_cfg.get("host", self.opensearch_host)
+        self.opensearch_port = os_cfg.get("port", self.opensearch_port)
+        self.opensearch_index = os_cfg.get("index", self.opensearch_index)
+
         stt = cfg.get("stt", {})
         self.stt_model_size = stt.get("model_size", self.stt_model_size)
         self.stt_sample_rate = stt.get("sample_rate", self.stt_sample_rate)
         self.stt_chunk_duration = stt.get("chunk_duration", self.stt_chunk_duration)
         self.stt_device_id = stt.get("device_id", self.stt_device_id)
 
-        piper = cfg.get("piper_voice_path", "")
-        if piper:
-            self.piper_voice_path = _expand(piper)
+        piper_cfg = cfg.get("piper", {})
+        self.piper_default_language = piper_cfg.get(
+            "default_language", self.piper_default_language
+        )
+        voices = piper_cfg.get("voices", {})
+        if voices:
+            self.piper_voices = {k: _expand(v) for k, v in voices.items()}
+        elif self.piper_voices is None:
+            self.piper_voices = {
+                "en": os.path.expanduser("./tools/piper/en_US-lessac-medium.onnx"),
+            }
 
         camera = cfg.get("camera", {})
         self.camera_device_id = camera.get("device_id", self.camera_device_id)
@@ -105,7 +120,7 @@ class Settings:
             "chroma_url": "CHROMA_URL",
             "chroma_collection": "CHROMA_COLLECTION",
             "stt_model_size": "STT_MODEL_SIZE",
-            "piper_voice_path": "PIPER_VOICE_PATH",
+            "piper_default_language": "PIPER_DEFAULT_LANGUAGE",
             "mediapipe_models_dir": "MEDIAPIPE_MODELS_DIR",
             "telegram_enabled": "TELEGRAM_ENABLED",
             "telegram_bot_token": "TELEGRAM_BOT_TOKEN",
@@ -115,8 +130,6 @@ class Settings:
             if val is not None:
                 if attr == "port":
                     val = int(val)
-                elif attr == "piper_voice_path":
-                    val = _expand(val)
                 elif attr == "mediapipe_models_dir":
                     val = _expand(val)
                 setattr(self, attr, val)

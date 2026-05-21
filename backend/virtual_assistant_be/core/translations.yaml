@@ -1,0 +1,19 @@
+en:
+  greeting_ready: "Hello! I'm ready to help."
+  hello_name: "Hello {name}!"
+  hello_unknown: "Hello there! What's your name?"
+  gesture_wave: "I see you waving!"
+  gesture_thumbs_up: "Got it!"
+  register_success: "Nice to meet you, {name}!"
+  register_failure: "Sorry, I couldn't save your name."
+  telegram_message: "Message from {sender} on Telegram: {text}"
+
+es:
+  greeting_ready: "¡Hola! Estoy listo para ayudar."
+  hello_name: "¡Hola {name}!"
+  hello_unknown: "¡Hola! ¿Cómo te llamas?"
+  gesture_wave: "¡Te veo saludando!"
+  gesture_thumbs_up: "¡Entendido!"
+  register_success: "¡Mucho gusto, {name}!"
+  register_failure: "Lo siento, no pude guardar tu nombre."
+  telegram_message: "Mensaje de {sender} en Telegram: {text}"

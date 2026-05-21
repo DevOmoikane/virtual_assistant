@@ -64,6 +64,11 @@
   </div>
 
   <div class="card">
+    <div class="section-title">Uploaded Documents</div>
+    <div id="doc-list"><span style="color:#999">Loading...</span></div>
+  </div>
+
+  <div class="card">
     <div class="section-title">Ingest Document</div>
     <label for="source">Source name</label>
     <input type="text" id="source" placeholder="e.g. my_document.txt" value="manual">
@@ -88,7 +93,14 @@
   <div class="card">
     <div class="section-title">Ask a Question</div>
     <label for="query">Question</label>
-    <input type="text" id="query" placeholder="Ask something about the ingested documents..." onkeydown="if(event.key==='Enter')ask()">
+    <input type="text" id="query" placeholder="Ask something..." onkeydown="if(event.key==='Enter')ask()">
+
+    <div style="margin:8px 0">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400;cursor:pointer">
+        <input type="checkbox" id="use-rag" checked>
+        RAG mode (answer only from uploaded documents)
+      </label>
+    </div>
 
     <button id="ask-btn" class="btn-success" onclick="ask()">Ask</button>
     <div id="ask-result" class="status"></div>
@@ -140,22 +152,16 @@ async function ask() {
   const status = document.getElementById('ask-result');
   btn.disabled = true; status.innerHTML = 'Thinking...';
   try {
-    const r = await fetch('/api/rag/ask', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({query}) });
+    const useRag = document.getElementById('use-rag').checked;
+    const r = await fetch('/api/rag/ask', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({query, use_rag: useRag}) });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'error');
 
     let html = '';
     if (d.answer) {
       html += `<div class="result"><pre>${escapeHtml(d.answer)}</pre></div>`;
-    }
-    if (d.context && d.context.length) {
-      html += `<div style="margin-top:8px;font-size:13px;color:#666"><strong>Retrieved ${d.context.length} context chunk(s):</strong></div>`;
-      d.context.forEach((c, i) => {
-        html += `<div class="result" style="margin-top:4px;font-size:13px"><pre>${escapeHtml(c)}</pre></div>`;
-      });
-    }
-    if (!d.answer && (!d.context || !d.context.length)) {
-      html = '<span style="color:#888">No relevant context found.</span>';
+    } else {
+      html = '<span style="color:#888">No answer could be generated.</span>';
     }
     status.innerHTML = html;
   } catch(e) { status.innerHTML = `<span style="color:#dc2626">${e.message}</span>`; }
@@ -163,6 +169,37 @@ async function ask() {
 }
 
 function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function loadDocuments() {
+  const el = document.getElementById('doc-list');
+  try {
+    const r = await fetch('/api/rag/documents');
+    const d = await r.json();
+    if (!d.documents || !d.documents.length) {
+      el.innerHTML = '<span style="color:#999">No documents uploaded yet.</span>';
+      return;
+    }
+    el.innerHTML = d.documents.map(doc => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #eee">
+        <span>${escapeHtml(doc.name)} <span style="color:#999;font-size:13px">(${doc.chunks} chunks)</span></span>
+        <button onclick="deleteDoc('${escapeHtml(doc.name)}')" style="background:#e63946;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:12px">Delete</button>
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = `<span style="color:#dc2626">Failed to load documents</span>`;
+  }
+}
+
+async function deleteDoc(name) {
+  if (!confirm(`Delete "${name}" and all its chunks?`)) return;
+  try {
+    const r = await fetch(`/api/rag/documents/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    await r.json();
+    loadDocuments();
+  } catch(e) {
+    alert('Delete failed');
+  }
+}
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -246,6 +283,7 @@ async function loadStats() {
 }
 loadStats();
 loadVisitStats();
+loadDocuments();
 setInterval(() => { loadStats(); loadVisitStats(); }, 5000);
 </script>
 </body>

@@ -6,6 +6,7 @@ import pytest
 
 from virtual_assistant_be.core.behavior_controller import BehaviorController
 from virtual_assistant_be.core.protocol import GoCommand, GoEvent
+from virtual_assistant_be.core.translations import translate as t
 
 
 @pytest.fixture
@@ -86,7 +87,7 @@ class TestBehaviorController:
         ):
             await controller._on_person_appeared(data={"name": "Alice"})
             mock_anim.assert_called_once_with("greet")
-            mock_speak.assert_awaited_once_with("Hello Alice!")
+            mock_speak.assert_awaited_once_with(t("hello_name", "en", name="Alice"))
 
     @pytest.mark.asyncio
     async def test_on_person_appeared_unknown(self, controller):
@@ -99,7 +100,7 @@ class TestBehaviorController:
         ):
             await controller._on_person_appeared(data={})
             mock_anim.assert_called_once_with("greet")
-            mock_speak.assert_awaited_once_with("Hello there! What's your name?")
+            mock_speak.assert_awaited_once_with(t("hello_unknown", "en"))
             mock_listen.assert_awaited_once_with(True)
 
     @pytest.mark.asyncio
@@ -114,7 +115,7 @@ class TestBehaviorController:
             controller.face_service.last_unknown_embedding = [0.1, 0.2, 0.3]
             ok = await controller._register_name("bob")
             assert ok is True
-            mock_speak.assert_awaited_once_with("Nice to meet you, Bob!")
+            mock_speak.assert_awaited_once_with(t("register_success", "en", name="Bob"))
             mock_listen.assert_awaited_once_with(False)
 
     @pytest.mark.asyncio
