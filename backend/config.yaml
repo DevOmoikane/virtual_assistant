@@ -38,6 +38,9 @@ camera:
 mediapipe:
   models_dir: null  # defaults to backend/tools/mediapipe_models
 
+rag:
+  enabled: true
+
 telegram:
   enabled: false
   bot_token: "5149792841:AAEcBvxY_OX9sdoOgK3VE_Eo1d33xEHI72Q"

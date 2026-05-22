@@ -52,6 +52,7 @@ class Settings:
     face_detection_model: str = ""
     gesture_recognition_model: str = ""
 
+    rag_enabled: bool = True
     telegram_enabled: bool = True
     telegram_bot_token: str = ""
 
@@ -105,6 +106,9 @@ class Settings:
         self.gesture_recognition_model = os.path.join(
             self.mediapipe_models_dir, "gesture_recognizer.task"
         )
+
+        rag_cfg = cfg.get("rag", {})
+        self.rag_enabled = rag_cfg.get("enabled", self.rag_enabled)
 
         telegram = cfg.get("telegram", {})
         self.telegram_enabled = telegram.get("enabled", self.telegram_enabled)

@@ -24,7 +24,7 @@ class TestLlmService:
             assert result == "Hello there!"
             mock_post.assert_called_once()
             call_kwargs = mock_post.call_args[1]
-            assert call_kwargs["json"]["model"] == "llama3.1"
+            assert call_kwargs["json"]["model"] == "llama3.2"
             assert call_kwargs["json"]["messages"] == [
                 {"role": "user", "content": "Hi"},
             ]

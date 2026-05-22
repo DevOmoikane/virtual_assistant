@@ -245,7 +245,7 @@ class BehaviorController:
                 log_duration("pipeline.classify_device_command", time.monotonic() - t0)
 
             context: str | None = None
-            if intent in ("question",):
+            if intent in ("question",) and settings.rag_enabled:
                 t0 = time.monotonic()
                 docs = await self._run_in_executor(self.rag.retrieve, text)
                 log_duration("pipeline.rag_retrieve", time.monotonic() - t0)

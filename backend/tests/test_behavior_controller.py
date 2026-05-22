@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from virtual_assistant_be.core.behavior_controller import BehaviorController
+from virtual_assistant_be.core.config import settings
 from virtual_assistant_be.core.protocol import GoCommand, GoEvent
 from virtual_assistant_be.core.translations import translate as t
 
@@ -69,6 +70,43 @@ class TestBehaviorController:
         assert mock_anim.await_count >= 1
 
     @pytest.mark.asyncio
+    async def test_handle_text_question_uses_rag_by_default(self, controller):
+        with (
+            patch.object(controller, "_send_think"),
+            patch.object(controller, "_send_speak"),
+            patch.object(controller, "send_animation"),
+            patch.object(controller.llm, "classify_intent", return_value="question"),
+            patch.object(controller.llm, "classify_device_command", return_value=None),
+            patch.object(controller.rag, "retrieve", return_value=["doc1"]) as mock_retrieve,
+            patch.object(controller.llm, "generate_response", return_value=("42.", "question")),
+            patch.object(controller.tts, "speak"),
+            patch.object(controller.llm, "decide_animation", return_value="think"),
+        ):
+            await controller.handle_text("What is the answer?")
+        mock_retrieve.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_text_question_skips_rag_when_disabled(self, controller):
+        original = settings.rag_enabled
+        settings.rag_enabled = False
+        try:
+            with (
+                patch.object(controller, "_send_think"),
+                patch.object(controller, "_send_speak"),
+                patch.object(controller, "send_animation"),
+                patch.object(controller.llm, "classify_intent", return_value="question"),
+                patch.object(controller.llm, "classify_device_command", return_value=None),
+                patch.object(controller.rag, "retrieve") as mock_retrieve,
+                patch.object(controller.llm, "generate_response", return_value=("42.", "question")),
+                patch.object(controller.tts, "speak"),
+                patch.object(controller.llm, "decide_animation", return_value="think"),
+            ):
+                await controller.handle_text("What is the answer?")
+            mock_retrieve.assert_not_called()
+        finally:
+            settings.rag_enabled = original
+
+    @pytest.mark.asyncio
     async def test_handle_text_error_does_not_crash(self, controller):
         with (
             patch.object(controller, "_send_think") as mock_think,
@@ -79,6 +117,7 @@ class TestBehaviorController:
 
     @pytest.mark.asyncio
     async def test_on_person_appeared_known(self, controller):
+        controller._current_language = "en"
         with (
             patch.object(controller, "send_animation") as mock_anim,
             patch.object(controller, "_send_speak") as mock_speak,
@@ -91,6 +130,7 @@ class TestBehaviorController:
 
     @pytest.mark.asyncio
     async def test_on_person_appeared_unknown(self, controller):
+        controller._current_language = "en"
         with (
             patch.object(controller, "send_animation") as mock_anim,
             patch.object(controller, "_send_speak") as mock_speak,
@@ -105,6 +145,7 @@ class TestBehaviorController:
 
     @pytest.mark.asyncio
     async def test_register_name_saves_and_greets(self, controller):
+        controller._current_language = "en"
         with (
             patch.object(controller, "_send_speak") as mock_speak,
             patch.object(controller, "_send_listen") as mock_listen,
