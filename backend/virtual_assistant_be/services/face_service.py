@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
 import threading
 import uuid
 
@@ -17,6 +19,10 @@ CHROMA_BASE = (
 )
 RECOGNITION_THRESHOLD = 0.8
 
+_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
+_PERSONALITY_FILE = os.path.join(_DATA_DIR, "person_personality.json")
+_LANGUAGE_FILE = os.path.join(_DATA_DIR, "person_language.json")
+
 
 class FaceService:
     def __init__(self) -> None:
@@ -27,6 +33,8 @@ class FaceService:
         self._ready = False
         self._init_error: str | None = None
         self.last_unknown_embedding: np.ndarray | None = None
+        self._personalities: dict[str, str] = self._load_personalities()
+        self._languages: dict[str, str] = self._load_languages()
 
         try:
             self._initialize()
@@ -134,6 +142,64 @@ class FaceService:
             return None, 1.0
 
     # --- Registration ---
+
+    # --- Personality storage ---
+
+    def _load_personalities(self) -> dict[str, str]:
+        try:
+            with open(_PERSONALITY_FILE) as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+        except Exception:
+            log.warning("Failed to load personalities", exc_info=True)
+            return {}
+
+    def _save_personalities(self) -> None:
+        try:
+            os.makedirs(_DATA_DIR, exist_ok=True)
+            with open(_PERSONALITY_FILE, "w") as f:
+                json.dump(self._personalities, f, indent=2)
+        except Exception:
+            log.warning("Failed to save personalities", exc_info=True)
+
+    def set_personality(self, name: str, personality: str) -> bool:
+        self._personalities[name] = personality
+        self._save_personalities()
+        log.info("Personality for '%s' set to '%s'", name, personality)
+        return True
+
+    def get_personality(self, name: str) -> str | None:
+        return self._personalities.get(name)
+
+    # --- Language storage ---
+
+    def _load_languages(self) -> dict[str, str]:
+        try:
+            with open(_LANGUAGE_FILE) as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+        except Exception:
+            log.warning("Failed to load languages", exc_info=True)
+            return {}
+
+    def _save_languages(self) -> None:
+        try:
+            os.makedirs(_DATA_DIR, exist_ok=True)
+            with open(_LANGUAGE_FILE, "w") as f:
+                json.dump(self._languages, f, indent=2)
+        except Exception:
+            log.warning("Failed to save languages", exc_info=True)
+
+    def set_language(self, name: str, language: str) -> bool:
+        self._languages[name] = language
+        self._save_languages()
+        log.info("Language for '%s' set to '%s'", name, language)
+        return True
+
+    def get_language(self, name: str) -> str | None:
+        return self._languages.get(name)
 
     def register(self, name: str, embedding: np.ndarray) -> bool:
         if not self._ready or self._collection_id is None:

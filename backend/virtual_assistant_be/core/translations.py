@@ -31,6 +31,43 @@ def _load() -> dict[str, dict[str, str]]:
     return _translations
 
 
+_LANG_NAMES: dict[str, str] = {
+    "en": "English",
+    "es": "español",
+    "fr": "français",
+    "de": "Deutsch",
+    "it": "italiano",
+    "pt": "português",
+    "ja": "日本語",
+    "zh": "中文",
+    "ko": "한국어",
+    "ru": "русский",
+    "ar": "العربية",
+    "nl": "Nederlands",
+    "pl": "polski",
+    "tr": "Türkçe",
+    "sv": "svenska",
+    "da": "dansk",
+    "fi": "suomi",
+    "no": "norsk",
+    "cs": "čeština",
+    "ro": "română",
+    "hu": "magyar",
+    "el": "ελληνικά",
+    "he": "עברית",
+    "hi": "हिन्दी",
+    "th": "ไทย",
+    "vi": "Tiếng Việt",
+    "id": "Bahasa Indonesia",
+    "ms": "Bahasa Melayu",
+}
+
+
+def lang_name(code: str) -> str:
+    """Return the full language name in its own language (e.g. 'es' → 'español')."""
+    return _LANG_NAMES.get(code, code)
+
+
 def translate(key: str, language: str = "en", **kwargs) -> str:
     data = _load()
     lang_dict = data.get(language) or data.get("en", {})

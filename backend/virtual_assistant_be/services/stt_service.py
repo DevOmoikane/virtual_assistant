@@ -10,6 +10,9 @@ from virtual_assistant_be.timer import Timer
 
 log = logging.getLogger(__name__)
 
+LANG_PROB_THRESHOLD = 0.5
+MIN_WORDS = 2
+
 
 class SttService:
     def __init__(self) -> None:
@@ -44,15 +47,41 @@ class SttService:
             )
 
             texts: list[str] = []
+            total_logprob = 0.0
+            n_segments = 0
             for segment in segments:
                 t = segment.text.strip()
                 if t:
                     texts.append(t)
+                    total_logprob += segment.avg_logprob
+                    n_segments += 1
 
             joined_texts: str = " ".join(texts)
             language: str = info.language if info else ""
+            lang_prob: float = info.language_probability if info else 0.0
+
             if joined_texts:
-                log.info("STT result: %s (lang: %s)", joined_texts, language)
+                log.info(
+                    "STT result: %s (lang: %s, prob: %.2f)",
+                    joined_texts, language, lang_prob,
+                )
+
+                word_count = len(joined_texts.split())
+                avg_logprob = total_logprob / n_segments if n_segments else 0.0
+
+                if lang_prob < LANG_PROB_THRESHOLD:
+                    log.info(
+                        "STT language '%.2f' below threshold %.2f — discarding language",
+                        lang_prob, LANG_PROB_THRESHOLD,
+                    )
+                    language = ""
+
+                if word_count < MIN_WORDS and avg_logprob < -1.0:
+                    log.info(
+                        "STT text too short/low-confidence (words=%d, avg_logprob=%.2f) — discarding",
+                        word_count, avg_logprob,
+                    )
+                    return "", ""
 
         return joined_texts, language
 

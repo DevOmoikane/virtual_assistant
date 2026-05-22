@@ -6,6 +6,7 @@ from typing import Any
 import requests
 
 from virtual_assistant_be.core.config import settings
+from virtual_assistant_be.core.translations import lang_name, translate as t
 from virtual_assistant_be.timer import Timer
 
 log = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ Question: {prompt}"""
         with Timer("llm.classify_intent"):
             system = (
                 "You classify user input into one of: "
-                "greeting, question, command, opinion, goodbye, other. "
+                "greeting, question, command, opinion, change_personality, goodbye, other. "
                 "Reply with only the label, no explanation."
             )
             result = self.generate(text.strip(), system=system).strip().lower()
@@ -72,8 +73,11 @@ Question: {prompt}"""
             "question": "think",
             "opinion": "listen",
             "command": "listen",
+            "change_personality": "think",
         }
         return mapping.get(intent, "listen")
+
+
 
     def classify_device_command(self, text: str) -> dict | None:
         with Timer("llm.classify_device_command"):
@@ -99,11 +103,12 @@ Question: {prompt}"""
             log.warning("Failed to parse device command from LLM response: %s", response)
         return None
 
-    def generate_response(self, user_input: str, context: str | None = None) -> tuple[str, str]:
+    def generate_response(self, user_input: str, context: str | None = None, language: str | None = None) -> tuple[str, str]:
         with Timer("llm.generate_response"):
             intent = self.classify_intent(user_input)
+            system = t("sys_respond_in", language, lang_name=lang_name(language)) if language else None
             if context:
-                response = self.generate(user_input, context=context)
+                response = self.generate(user_input, context=context, system=system)
             else:
-                response = self.generate(user_input)
+                response = self.generate(user_input, system=system)
         return response, intent

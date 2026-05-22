@@ -87,6 +87,9 @@ class TestLlmService:
     def test_decide_animation_default(self, service):
         assert service.decide_animation("", intent="other") == "listen"
 
+    def test_decide_animation_change_personality(self, service):
+        assert service.decide_animation("", intent="change_personality") == "think"
+
     def test_decide_animation_without_intent(self, service):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"message": {"content": "greeting"}}

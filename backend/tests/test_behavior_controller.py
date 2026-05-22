@@ -211,3 +211,137 @@ class TestBehaviorController:
             patch.object(controller.tts, "speak"),
         ):
             await controller.handle_text("")
+
+    # --- Personality change tests ---
+
+    @pytest.mark.asyncio
+    async def test_change_personality_with_known_person(self, controller):
+        controller._current_person_name = "Alice"
+        controller._current_language = "en"
+        controller.personality._enabled = False
+        with (
+            patch.object(controller, "_say") as mock_say,
+            patch.object(controller.llm, "classify_intent", return_value="change_personality"),
+            patch.object(controller, "_handle_change_personality") as mock_handle,
+        ):
+            await controller.handle_text("be more cheerful")
+            mock_handle.assert_awaited_once_with("be more cheerful", None)
+
+    @pytest.mark.asyncio
+    async def test_change_personality_stores_and_confirms(self, controller):
+        controller._current_person_name = "Alice"
+        controller._current_language = "en"
+        controller.personality._enabled = False
+        with (
+            patch.object(controller, "_say") as mock_say,
+            patch.object(controller, "_send_speak"),
+            patch.object(controller.tts, "speak"),
+            patch.object(controller.personality, "normalize_personality", return_value="cheerful"),
+            patch.object(controller.face_service, "set_personality", return_value=True),
+        ):
+            await controller._handle_change_personality("be more cheerful")
+            mock_say.assert_awaited_once_with("personality_changed", personality="cheerful")
+            assert controller.personality.style == "cheerful"
+
+    @pytest.mark.asyncio
+    async def test_change_personality_requires_face(self, controller):
+        controller._current_person_name = None
+        controller._current_language = "en"
+        with (
+            patch.object(controller, "_say") as mock_say,
+            patch.object(controller.tts, "speak"),
+        ):
+            await controller._handle_change_personality("be more cheerful")
+            mock_say.assert_awaited_once_with("personality_need_face")
+
+    @pytest.mark.asyncio
+    async def test_on_person_appeared_loads_stored_personality(self, controller):
+        controller._current_language = "en"
+        controller.personality._enabled = False
+        with (
+            patch.object(controller, "send_animation"),
+            patch.object(controller, "_send_speak"),
+            patch.object(controller, "_send_listen"),
+            patch.object(controller.tts, "speak"),
+            patch.object(controller.memory, "store_person_event"),
+            patch.object(controller.face_service, "get_personality", return_value="cheerful"),
+        ):
+            await controller._on_person_appeared(data={"name": "Alice"})
+            assert controller._current_person_name == "Alice"
+            assert controller.personality.style == "cheerful"
+
+    @pytest.mark.asyncio
+    async def test_on_person_appeared_no_stored_personality(self, controller):
+        controller._current_language = "en"
+        controller.personality._enabled = False
+        original_style = controller.personality.style
+        with (
+            patch.object(controller, "send_animation"),
+            patch.object(controller, "_send_speak"),
+            patch.object(controller, "_send_listen"),
+            patch.object(controller.tts, "speak"),
+            patch.object(controller.memory, "store_person_event"),
+            patch.object(controller.face_service, "get_personality", return_value=None),
+        ):
+            await controller._on_person_appeared(data={"name": "Alice"})
+            assert controller._current_person_name == "Alice"
+            assert controller.personality.style == original_style
+
+    @pytest.mark.asyncio
+    async def test_on_person_disappeared_resets_personality(self, controller):
+        controller._current_person_name = "Alice"
+        controller.personality.set_style("cheerful")
+        with (
+            patch.object(controller.memory, "store_person_event"),
+            patch.object(controller, "send_animation"),
+            patch.object(controller, "_send"),
+        ):
+            await controller._on_person_disappeared()
+            assert controller._current_person_name is None
+            assert controller.personality.style == settings.personality_style
+
+    # --- Language tests ---
+
+    @pytest.mark.asyncio
+    async def test_on_person_appeared_loads_stored_language(self, controller):
+        controller._current_language = "en"
+        controller.personality._enabled = False
+        with (
+            patch.object(controller, "send_animation"),
+            patch.object(controller, "_send_speak"),
+            patch.object(controller, "_send_listen"),
+            patch.object(controller.tts, "speak"),
+            patch.object(controller.memory, "store_person_event"),
+            patch.object(controller.face_service, "get_personality", return_value=None),
+            patch.object(controller.face_service, "get_language", return_value="es"),
+        ):
+            await controller._on_person_appeared(data={"name": "Alice"})
+            assert controller._current_language == "es"
+
+    @pytest.mark.asyncio
+    async def test_on_audio_chunk_stores_language_for_known_person(self, controller):
+        controller._current_person_name = "Alice"
+        controller._current_language = "en"
+        with (
+            patch.object(controller.stt, "transcribe", return_value=("hola", "es")),
+            patch.object(controller, "handle_text"),
+            patch.object(controller, "_send_listen"),
+            patch.object(controller.face_service, "set_language") as mock_set_lang,
+        ):
+            await controller._on_audio_chunk(None)
+            mock_set_lang.assert_called_once_with("Alice", "es")
+            assert controller._current_language == "es"
+
+    @pytest.mark.asyncio
+    async def test_on_audio_chunk_does_not_store_language_for_unknown(self, controller):
+        controller._current_person_name = None
+        controller._current_language = "en"
+        with (
+            patch.object(controller.stt, "transcribe", return_value=("hola", "es")),
+            patch.object(controller, "handle_text"),
+            patch.object(controller, "_send_listen"),
+            patch.object(controller.face_service, "set_language") as mock_set_lang,
+        ):
+            await controller._on_audio_chunk(None)
+            mock_set_lang.assert_not_called()
+            assert controller._current_language == "es"

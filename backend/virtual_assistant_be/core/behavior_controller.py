@@ -65,6 +65,7 @@ class BehaviorController:
         self._last_gesture_time: float = 0.0
         self._pending_name: str | None = None
         self._current_language: str = settings.piper_default_language
+        self._current_person_name: str | None = None
 
     async def _run_in_executor(self, fn, *args):
         loop = asyncio.get_running_loop()
@@ -123,7 +124,20 @@ class BehaviorController:
         await self._run_in_executor(self.memory.store_person_event, "appeared")
 
         name = data.get("name")
+        self._current_person_name = name
         if name:
+            stored_personality = await self._run_in_executor(
+                self.face_service.get_personality, name
+            )
+            if stored_personality and stored_personality != "default" and stored_personality != settings.personality_style:
+                self.personality.set_style(stored_personality)
+                log.info("Applied stored personality '%s' for '%s'", stored_personality, name)
+            stored_lang = await self._run_in_executor(
+                self.face_service.get_language, name
+            )
+            if stored_lang:
+                self._current_language = stored_lang
+                log.info("Applied stored language '%s' for '%s'", stored_lang, name)
             await self.send_animation("greet")
             await self._say("hello_name", name=name)
         else:
@@ -134,6 +148,8 @@ class BehaviorController:
 
     async def _on_person_disappeared(self) -> None:
         await self._run_in_executor(self.memory.store_person_event, "disappeared")
+        self._current_person_name = None
+        self.personality.reset_style()
         await self.send_animation("idle")
         await self._send(serialize(StateUpdate(connected=True)))
 
@@ -177,6 +193,11 @@ class BehaviorController:
             text = text.strip()
             if text:
                 self._current_language = language or self._current_language
+                if self._current_person_name:
+                    await self._run_in_executor(
+                        self.face_service.set_language,
+                        self._current_person_name, self._current_language,
+                    )
                 log_duration("pipeline.transcribe_to_text", time.monotonic() - t0)
                 await self.handle_text(text, language)
             else:
@@ -220,6 +241,23 @@ class BehaviorController:
         await self._send_listen(False)
         return True
 
+    async def _handle_change_personality(
+        self, text: str, language: str | None = None
+    ) -> None:
+        if not self._current_person_name:
+            await self._say("personality_need_face")
+            return
+
+        normalized = await self._run_in_executor(
+            self.personality.normalize_personality, text,
+        )
+        await self._run_in_executor(
+            self.face_service.set_personality,
+            self._current_person_name, normalized,
+        )
+        self.personality.set_style(normalized)
+        await self._say("personality_changed", personality=normalized)
+
     async def handle_text(self, text: str, language: str | None = None) -> None:
         t_start = time.monotonic()
 
@@ -232,6 +270,10 @@ class BehaviorController:
             t0 = time.monotonic()
             intent = await self._run_in_executor(self.llm.classify_intent, text)
             log_duration("pipeline.classify_intent", time.monotonic() - t0)
+
+            if intent == "change_personality":
+                await self._handle_change_personality(text, language)
+                return
 
             t0 = time.monotonic()
             device_cmd = await self._run_in_executor(self.llm.classify_device_command, text)
@@ -251,7 +293,7 @@ class BehaviorController:
 
             t0 = time.monotonic()
             response, resolved_intent = await self._run_in_executor(
-                self.llm.generate_response, text, context,
+                self.llm.generate_response, text, context, self._lang(language),
             )
             log_duration("pipeline.generate_response", time.monotonic() - t0)
 
