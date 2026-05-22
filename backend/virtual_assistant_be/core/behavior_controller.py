@@ -122,7 +122,7 @@ class BehaviorController:
             msg = t("hello_unknown", self._lang())
             await self._speak(msg)
             await self._send_speak(msg)
-            self._pending_name = None
+            self._pending_name = True
             await self._send_listen(True)
 
     async def _on_person_disappeared(self) -> None:

@@ -142,6 +142,7 @@ class TestBehaviorController:
             mock_anim.assert_called_once_with("greet")
             mock_speak.assert_awaited_once_with(t("hello_unknown", "en"))
             mock_listen.assert_awaited_once_with(True)
+            assert controller._pending_name is True
 
     @pytest.mark.asyncio
     async def test_register_name_saves_and_greets(self, controller):
