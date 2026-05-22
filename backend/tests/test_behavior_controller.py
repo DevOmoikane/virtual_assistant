@@ -20,6 +20,7 @@ def controller():
 class TestBehaviorController:
     @pytest.mark.asyncio
     async def test_handle_command_ready_sends_greeting(self, controller):
+        controller.personality._enabled = False
         with (
             patch.object(controller, "send_animation") as mock_anim,
             patch.object(controller, "_send_speak") as mock_speak,
@@ -118,6 +119,7 @@ class TestBehaviorController:
     @pytest.mark.asyncio
     async def test_on_person_appeared_known(self, controller):
         controller._current_language = "en"
+        controller.personality._enabled = False
         with (
             patch.object(controller, "send_animation") as mock_anim,
             patch.object(controller, "_send_speak") as mock_speak,
@@ -131,6 +133,7 @@ class TestBehaviorController:
     @pytest.mark.asyncio
     async def test_on_person_appeared_unknown(self, controller):
         controller._current_language = "en"
+        controller.personality._enabled = False
         with (
             patch.object(controller, "send_animation") as mock_anim,
             patch.object(controller, "_send_speak") as mock_speak,
@@ -147,6 +150,7 @@ class TestBehaviorController:
     @pytest.mark.asyncio
     async def test_register_name_saves_and_greets(self, controller):
         controller._current_language = "en"
+        controller.personality._enabled = False
         with (
             patch.object(controller, "_send_speak") as mock_speak,
             patch.object(controller, "_send_listen") as mock_listen,

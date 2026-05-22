@@ -169,7 +169,7 @@ class TestCameraServiceLifecycle:
     def test_start_stop(self, mock_cv2):
         cap_mock = MagicMock()
         cap_mock.isOpened.return_value = True
-        cap_mock.read.return_value = (False, None)
+        cap_mock.read.side_effect = [(True, MagicMock()), (False, None)]
         mock_cv2.VideoCapture.return_value = cap_mock
 
         svc = CameraService()
@@ -204,6 +204,7 @@ class TestCameraServiceLifecycle:
         face_detector_instance.detect.return_value = detection
 
         svc = CameraService()
+        svc._startup_settle = 0
         svc._face_detector = face_detector_instance
 
         mp_image = MagicMock()
@@ -221,6 +222,7 @@ class TestCameraServiceLifecycle:
         face_detector_instance.detect.return_value = detection
 
         svc = CameraService()
+        svc._startup_settle = 0
         svc._person_present = True
         svc._face_detector = face_detector_instance
 
@@ -239,6 +241,7 @@ class TestCameraServiceLifecycle:
         face_detector_instance.detect.return_value = detection
 
         svc = CameraService()
+        svc._startup_settle = 0
         svc._person_present = True
         svc._face_detector = face_detector_instance
 
@@ -255,6 +258,7 @@ class TestCameraServiceLifecycle:
         face_detector_instance.detect.return_value = detection
 
         svc = CameraService()
+        svc._startup_settle = 0
         svc._face_detector = face_detector_instance
         svc._wave_history = [0.5, 0.55, 0.5]
 
@@ -267,6 +271,7 @@ class TestCameraServiceLifecycle:
 
     def test_gesture_detected_event(self):
         svc = CameraService()
+        svc._startup_settle = 0
         face_detector_instance = cs.FaceDetector.create_from_options.return_value
         gesture_recognizer_instance = (
             cs.GestureRecognizer.create_from_options.return_value

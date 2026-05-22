@@ -70,6 +70,7 @@ class AudioService:
 
     def stop(self) -> None:
         self._running = False
+        sd.stop()
         if self._thread:
             self._thread.join(timeout=3)
         log.info("Audio service stopped")
@@ -94,6 +95,8 @@ class AudioService:
             self._silence_frames = 0.0
             self._speech_duration = 0.0
             self._speech_active = False
+        with self._buffer_lock:
+            self._buffer = np.array([], dtype=np.float32)
 
     def unmute(self) -> None:
         with self._mute_lock:

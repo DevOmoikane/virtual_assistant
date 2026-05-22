@@ -10,9 +10,9 @@ from virtual_assistant_be.services.personality_service import PersonalityService
 
 
 class TestPersonalityService:
-    def test_disabled_by_default(self):
+    def test_created_with_current_settings(self):
         svc = PersonalityService()
-        assert svc.enabled is False
+        assert svc.enabled is settings.personality_enabled
 
     def test_disabled_returns_original_text(self):
         original = settings.personality_enabled
@@ -143,23 +143,20 @@ class TestBehaviorControllerSay:
     @pytest.mark.asyncio
     async def test_say_disabled_passes_through(self, controller):
         controller._current_language = "en"
-        original_enabled = settings.personality_enabled
-        settings.personality_enabled = False
-        try:
-            with (
-                patch.object(controller, "_speak") as mock_speak,
-                patch.object(controller, "_send_speak") as mock_send_speak,
-            ):
-                msg = await controller._say("hello_name", name="Alice")
-                assert msg == "Hello Alice!"
-                mock_speak.assert_awaited_once_with("Hello Alice!", "en")
-                mock_send_speak.assert_awaited_once_with("Hello Alice!")
-        finally:
-            settings.personality_enabled = original_enabled
+        controller.personality._enabled = False
+        with (
+            patch.object(controller, "_speak") as mock_speak,
+            patch.object(controller, "_send_speak") as mock_send_speak,
+        ):
+            msg = await controller._say("hello_name", name="Alice")
+            assert msg == "Hello Alice!"
+            mock_speak.assert_awaited_once_with("Hello Alice!", "en")
+            mock_send_speak.assert_awaited_once_with("Hello Alice!")
 
     @pytest.mark.asyncio
     async def test_say_disabled_in_spanish(self, controller):
         controller._current_language = "es"
+        controller.personality._enabled = False
         with (
             patch.object(controller, "_speak") as mock_speak,
             patch.object(controller, "_send_speak") as mock_send_speak,

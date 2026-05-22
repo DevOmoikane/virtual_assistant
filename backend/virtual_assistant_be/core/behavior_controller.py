@@ -310,11 +310,6 @@ class BehaviorController:
         await self._send_listen(True)
         await self._run_in_executor(self.telegram.start_polling)
 
-        try:
-            await self._say("greeting_ready")
-        except Exception:
-            log.warning("TTS not available, skipping greeting speech")
-
     async def _on_shutdown(self) -> None:
         log.info("Shutting down")
         await self._cleanup()

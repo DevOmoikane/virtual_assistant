@@ -99,6 +99,9 @@ class CameraService:
         self._face_miss_streak = 0
         self._last_frame_bgr: np.ndarray | None = None
 
+        self._startup_settle = 150
+        self._person_seen_during_settle = False
+
         self._camera_idx = 0
         self._audio_device_id: int | None = None
         self._probe_devices()
@@ -140,6 +143,8 @@ class CameraService:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         log.info("Camera service started")
+        self._startup_settle = 150
+        self._person_seen_during_settle = False
 
     def stop(self) -> None:
         self._running = False
@@ -255,6 +260,17 @@ class CameraService:
         try:
             result = self._face_detector.detect(mp_image)
             faces_detected = len(result.detections) > 0
+
+            if self._startup_settle > 0:
+                self._startup_settle -= 1
+                if faces_detected:
+                    self._person_seen_during_settle = True
+                if self._startup_settle == 0:
+                    self._person_present = self._person_seen_during_settle
+                    self._face_hit_streak = 3 if self._person_seen_during_settle else 0
+                    self._face_miss_streak = 0
+                    log.info("Camera settle done: person_present=%s", self._person_present)
+                return
 
             if faces_detected:
                 self._face_hit_streak += 1

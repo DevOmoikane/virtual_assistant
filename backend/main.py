@@ -1,7 +1,7 @@
 import uvicorn
 
 def main():
-    uvicorn.run("virtual_assistant_be.api.app:app", host="0.0.0.0", port=7700, reload=True)
+    uvicorn.run("virtual_assistant_be.api.app:app", host="0.0.0.0", port=7700)
 
 if __name__ == "__main__":
     main()
