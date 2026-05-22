@@ -61,6 +61,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         log.exception("WebSocket error")
     finally:
+        controller.set_send_fn(None)
         await controller._cleanup()
         _connected = False
         try:
