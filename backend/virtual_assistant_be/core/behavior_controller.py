@@ -31,6 +31,7 @@ from virtual_assistant_be.services.memory_service import MemoryService
 from virtual_assistant_be.services.command_service import CommandService
 from virtual_assistant_be.services.telegram_service import TelegramService
 from virtual_assistant_be.services.face_service import FaceService
+from virtual_assistant_be.services.personality_service import PersonalityService
 
 SendFn = Callable[[dict], Awaitable[None]]
 
@@ -57,6 +58,7 @@ class BehaviorController:
         self.memory = MemoryService()
         self.telegram = TelegramService()
         self.commands = CommandService(telegram_service=self.telegram)
+        self.personality = PersonalityService()
         self.telegram.set_message_callback(self._on_telegram_message)
 
         self._last_person_greeted: float = 0.0
@@ -78,6 +80,15 @@ class BehaviorController:
             await self._run_in_executor(self.tts.speak, text, lang)
         finally:
             self.audio.unmute()
+
+    async def _say(self, key: str, **fmt_args: str) -> str:
+        lang = self._lang()
+        msg = t(key, lang, **fmt_args)
+        if self.personality.enabled:
+            msg = await self._run_in_executor(self.personality.personalize, msg, lang)
+        await self._speak(msg, lang)
+        await self._send_speak(msg)
+        return msg
 
     def _on_barge_in(self) -> None:
         """Called from audio thread when user speaks loudly during TTS."""
@@ -114,14 +125,10 @@ class BehaviorController:
         name = data.get("name")
         if name:
             await self.send_animation("greet")
-            msg = t("hello_name", self._lang(), name=name)
-            await self._speak(msg)
-            await self._send_speak(msg)
+            await self._say("hello_name", name=name)
         else:
             await self.send_animation("greet")
-            msg = t("hello_unknown", self._lang())
-            await self._speak(msg)
-            await self._send_speak(msg)
+            await self._say("hello_unknown")
             self._pending_name = True
             await self._send_listen(True)
 
@@ -141,14 +148,10 @@ class BehaviorController:
         match gesture:
             case "wave":
                 await self.send_animation("greet")
-                msg = t("gesture_wave", self._lang())
-                await self._speak(msg)
-                await self._send_speak(msg)
+                await self._say("gesture_wave")
             case "thumbs_up":
                 await self.send_animation("nod")
-                msg = t("gesture_thumbs_up", self._lang())
-                await self._speak(msg)
-                await self._send_speak(msg)
+                await self._say("gesture_thumbs_up")
             case "open_palm":
                 if self.tts.is_speaking:
                     await self._interrupt_speech()
@@ -164,9 +167,7 @@ class BehaviorController:
     async def _on_telegram_message(self, sender: str, text: str, chat_id: int) -> None:
         log.info("Telegram from %s: %s", sender, text)
         if self._send:
-            msg = t("telegram_message", self._lang(), sender=sender, text=text)
-            await self._send_speak(msg)
-            await self._speak(msg)
+            await self._say("telegram_message", sender=sender, text=text)
 
     async def _on_audio_chunk(self, audio: np.ndarray) -> None:
         await self._send_listen(True)
@@ -212,13 +213,9 @@ class BehaviorController:
         if emb is not None:
             ok = await self._run_in_executor(self.face_service.register, name, emb)
             if ok:
-                msg = t("register_success", self._lang(), name=name)
-                await self._send_speak(msg)
-                await self._speak(msg)
+                await self._say("register_success", name=name)
             else:
-                msg = t("register_failure", self._lang())
-                await self._send_speak(msg)
-                await self._speak(msg)
+                await self._say("register_failure")
         self._pending_name = None
         await self._send_listen(False)
         return True
@@ -314,9 +311,7 @@ class BehaviorController:
         await self._run_in_executor(self.telegram.start_polling)
 
         try:
-            msg = t("greeting_ready", self._lang())
-            await self._speak(msg)
-            await self._send_speak(msg)
+            await self._say("greeting_ready")
         except Exception:
             log.warning("TTS not available, skipping greeting speech")
 

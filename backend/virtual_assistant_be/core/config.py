@@ -56,6 +56,9 @@ class Settings:
     telegram_enabled: bool = True
     telegram_bot_token: str = ""
 
+    personality_enabled: bool = False
+    personality_style: str = "friendly and courteous"
+
     def _apply_yaml(self, cfg: dict) -> None:
         self.host = cfg.get("host", self.host)
         self.port = cfg.get("port", self.port)
@@ -113,6 +116,10 @@ class Settings:
         telegram = cfg.get("telegram", {})
         self.telegram_enabled = telegram.get("enabled", self.telegram_enabled)
         self.telegram_bot_token = telegram.get("bot_token", self.telegram_bot_token)
+
+        personality = cfg.get("personality", {})
+        self.personality_enabled = personality.get("enabled", self.personality_enabled)
+        self.personality_style = personality.get("style", self.personality_style)
 
     def _apply_env(self) -> None:
         env_map = {
