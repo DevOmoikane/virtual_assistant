@@ -21,6 +21,7 @@ stt:
   sample_rate: 16000
   chunk_duration: 3.0
   device_id: null
+  vad_bypass: false  # false = use custom VAD (adaptive noise floor + silence timeout)
 
 piper:
   default_language: "es"

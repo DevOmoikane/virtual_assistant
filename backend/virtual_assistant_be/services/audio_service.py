@@ -19,6 +19,8 @@ DeviceCallback = Callable[[list[dict]], None]
 
 SAMPLE_RATE = settings.stt_sample_rate
 FRAME_SIZE = 480
+CHUNK_DURATION = 3.0
+RAWS_CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION)
 SILENCE_TIMEOUT = 0.5
 MIN_SPEECH_DURATION = 0.5
 MAX_SPEECH_DURATION = 15.0
@@ -49,6 +51,12 @@ class AudioService:
         self._noise_floor: float = 0.0
         self._noise_floor_frames = 0
         self._threshold_log_time = 0.0
+
+        self._raw_mode = settings.stt_vad_bypass
+        self._raw_buffer: np.ndarray = np.array([], dtype=np.float32)
+        self._raw_buffer_lock = threading.Lock()
+        if self._raw_mode:
+            log.warning("VAD bypass enabled — streaming raw %.1fs chunks to STT", CHUNK_DURATION)
 
     def set_callback(self, callback: AudioCallback) -> None:
         self._callback = callback
@@ -91,6 +99,8 @@ class AudioService:
             self._speech_active = False
         with self._buffer_lock:
             self._buffer = np.array([], dtype=np.float32)
+        with self._raw_buffer_lock:
+            self._raw_buffer = np.array([], dtype=np.float32)
 
     def unmute(self) -> None:
         with self._mute_lock:
@@ -106,6 +116,12 @@ class AudioService:
             self._noise_floor_frames += 1
         else:
             self._noise_floor += NOISE_FLOOR_ALPHA * (rms - self._noise_floor)
+
+    def _reset_vad_state(self) -> None:
+        self._speech_buffer = np.array([], dtype=np.float32)
+        self._speech_active = False
+        self._silence_frames = 0.0
+        self._speech_duration = 0.0
 
     def _process_vad(self, chunk: np.ndarray) -> None:
         with self._mute_lock:
@@ -123,25 +139,23 @@ class AudioService:
             log.info("VAD: noise_floor=%.5f threshold=%.5f rms=%.5f speech=%s",
                      self._noise_floor, threshold, rms, is_speech)
 
-        if not is_speech and not self._speech_active:
+        if not is_speech:
             self._update_noise_floor(rms)
 
         if is_speech:
-            if not self._speech_active:
-                log.info("TIMING vad: speech started (waiting for silence timeout)")
-                self._speech_start_time = time.monotonic()
             self._speech_buffer = np.append(self._speech_buffer, chunk)
-            self._silence_frames = 0.0
             self._speech_duration += frame_duration
-            if not self._speech_active:
+            self._silence_frames = 0.0
+
+            if not self._speech_active and self._speech_duration >= MIN_SPEECH_DURATION:
+                log.info("TIMING vad: speech started (after %.1fs)", self._speech_duration)
+                self._speech_start_time = time.monotonic()
                 self._speech_active = True
-            if self._speech_duration >= MAX_SPEECH_DURATION:
+
+            if self._speech_active and self._speech_duration >= MAX_SPEECH_DURATION:
                 log_duration("vad.speech_segment", time.monotonic() - self._speech_start_time)
                 self._emit(self._speech_buffer.copy())
-                self._speech_buffer = np.array([], dtype=np.float32)
-                self._speech_active = False
-                self._silence_frames = 0.0
-                self._speech_duration = 0.0
+                self._reset_vad_state()
         else:
             if self._speech_active:
                 self._silence_frames += frame_duration
@@ -151,11 +165,28 @@ class AudioService:
                     total_duration = time.monotonic() - self._speech_start_time
                     log_duration("vad.speech_to_emit", total_duration)
                     self._emit(self._speech_buffer.copy())
-
+                    self._reset_vad_state()
+            else:
+                if self._speech_duration > 0:
                     self._speech_buffer = np.array([], dtype=np.float32)
-                    self._speech_active = False
-                    self._silence_frames = 0.0
                     self._speech_duration = 0.0
+
+    def _calibrate_noise_floor(self, iterations: int = 30) -> None:
+        for _ in range(iterations):
+            sd.sleep(100)
+            with self._buffer_lock:
+                if len(self._buffer) >= FRAME_SIZE:
+                    chunk = self._buffer[:FRAME_SIZE].copy()
+                    self._buffer = self._buffer[FRAME_SIZE:]
+                else:
+                    chunk = None
+            if chunk is not None:
+                rms = np.sqrt(np.mean(chunk**2))
+                self._update_noise_floor(rms)
+        log.info(
+            "VAD calibrated: noise_floor=%.5f threshold=%.5f (frames=%d)",
+            self._noise_floor, self._speech_threshold, self._noise_floor_frames,
+        )
 
     def _run(self) -> None:
         try:
@@ -166,17 +197,45 @@ class AudioService:
                 blocksize=FRAME_SIZE,
                 device=self._device_id,
             ):
+                self._calibrate_noise_floor()
+
                 while self._running:
-                    sd.sleep(100)
+                    sd.sleep(50)
 
-                    with self._buffer_lock:
-                        if len(self._buffer) >= FRAME_SIZE:
-                            chunk = self._buffer[:FRAME_SIZE].copy()
-                            self._buffer = self._buffer[FRAME_SIZE:]
+                    while True:
+                        with self._buffer_lock:
+                            if len(self._buffer) >= FRAME_SIZE:
+                                chunk = self._buffer[:FRAME_SIZE].copy()
+                                self._buffer = self._buffer[FRAME_SIZE:]
+                            else:
+                                chunk = None
+                        if chunk is None:
+                            break
+
+                        if self._raw_mode:
+                            self._process_raw_chunk(chunk)
                         else:
-                            chunk = None
-
-                    if chunk is not None:
-                        self._process_vad(chunk)
+                            self._process_vad(chunk)
         except Exception:
             log.exception("Audio capture error")
+
+    def _process_raw_chunk(self, chunk: np.ndarray) -> None:
+        rms = np.sqrt(np.mean(chunk**2))
+        with self._raw_buffer_lock:
+            self._raw_buffer = np.append(self._raw_buffer, chunk)
+            while len(self._raw_buffer) >= RAWS_CHUNK_SAMPLES:
+                emit_chunk = self._raw_buffer[:RAWS_CHUNK_SAMPLES].copy()
+                self._raw_buffer = self._raw_buffer[RAWS_CHUNK_SAMPLES:]
+                log.debug(
+                    "RAW: emitting %.1fs chunk (rms=%.5f, buf_remain=%.1fs)",
+                    CHUNK_DURATION, rms, len(self._raw_buffer) / SAMPLE_RATE,
+                )
+                self._emit(emit_chunk)
+
+        now = time.monotonic()
+        if now - self._threshold_log_time > 5.0:
+            self._threshold_log_time = now
+            log.info(
+                "RAW mode: noise_floor=%.5f threshold=%.5f chunk_rms=%.5f",
+                self._noise_floor, self._speech_threshold, rms,
+            )

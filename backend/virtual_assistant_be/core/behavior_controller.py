@@ -65,6 +65,7 @@ class BehaviorController:
         self._pending_name: str | None = None
         self._current_language: str = settings.piper_default_language
         self._current_person_name: str | None = None
+        self._processing_text = False
 
     async def _run_in_executor(self, fn, *args):
         loop = asyncio.get_running_loop()
@@ -180,6 +181,9 @@ class BehaviorController:
             await self._say("telegram_message", sender=sender, text=text)
 
     async def _on_audio_chunk(self, audio: np.ndarray) -> None:
+        if self._processing_text or self.tts.is_speaking:
+            log.info("Already speaking or processing, ignoring audio chunk")
+            return
         await self._send_listen(True)
         try:
             t0 = time.monotonic()
@@ -253,10 +257,15 @@ class BehaviorController:
         await self._say("personality_changed", personality=normalized)
 
     async def handle_text(self, text: str, language: str | None = None) -> None:
+        if self._processing_text:
+            log.info("Already processing text, dropping: %s", text[:60])
+            return
+        self._processing_text = True
         t_start = time.monotonic()
 
         if await self._register_name(text):
             log_duration("pipeline.register_name", time.monotonic() - t_start)
+            self._processing_text = False
             return
 
         await self._send_think(True)
@@ -267,6 +276,7 @@ class BehaviorController:
 
             if intent == "change_personality":
                 await self._handle_change_personality(text, language)
+                self._processing_text = False
                 return
 
             t0 = time.monotonic()
@@ -306,6 +316,7 @@ class BehaviorController:
         except Exception:
             log.exception("handle_text failed")
         finally:
+            self._processing_text = False
             await self._send_think(False)
 
     async def _execute_device_command(self, cmd: dict) -> None:

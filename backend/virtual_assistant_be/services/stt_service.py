@@ -40,10 +40,22 @@ class SttService:
             if peak > 0:
                 audio = audio / peak * 0.95
 
+            log.info("Transcribing audio of length %d samples ...", len(audio))
+
             segments, info = model.transcribe(
                 audio,
-                language=None,
-                beam_size=1,
+                language="es",
+                beam_size=5,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+                no_speech_threshold=0.6,
+                log_prob_threshold=-2.0,
+                compression_ratio_threshold=2.4,
+            )
+
+            log.info(
+                "language: %s (prob: %.2f)",
+                info.language if info else "", info.language_probability if info else 0.0,
             )
 
             texts: list[str] = []

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 import numpy as np
 import sounddevice as sd
@@ -18,7 +19,7 @@ class TtsService:
         self._voices: dict[str, PiperVoice] = {}
         self._voice_paths: dict[str, str] = dict(settings.piper_voices or {})
         self._default_language: str = settings.piper_default_language
-        self._stop_requested = False
+        self._stop_event = threading.Event()
         self._playing = False
 
     def _ensure_voice(self, language: str) -> PiperVoice | None:
@@ -68,7 +69,7 @@ class TtsService:
         return self._playing
 
     def stop(self) -> None:
-        self._stop_requested = True
+        self._stop_event.set()
         sd.stop()
 
     def speak(self, text: str, language: str | None = None) -> None:
@@ -78,12 +79,12 @@ class TtsService:
             if voice is None:
                 return
 
-            self._stop_requested = False
+            self._stop_event.clear()
             self._playing = True
             config = SynthesisConfig()
             try:
                 for chunk in voice.synthesize(text, config):
-                    if self._stop_requested:
+                    if self._stop_event.is_set():
                         break
                     audio = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
                     sd.play(audio, samplerate=voice.config.sample_rate)
