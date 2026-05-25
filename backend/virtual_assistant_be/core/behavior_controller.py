@@ -53,7 +53,6 @@ class BehaviorController:
         self.audio = AudioService(
             audio_callback=self._on_audio_chunk,
             device_id=self.camera.audio_device_id,
-            interrupt_callback=self._on_barge_in,
         )
         self.memory = MemoryService()
         self.telegram = TelegramService()
@@ -90,11 +89,6 @@ class BehaviorController:
         await self._speak(msg, lang)
         await self._send_speak(msg)
         return msg
-
-    def _on_barge_in(self) -> None:
-        """Called from audio thread when user speaks loudly during TTS."""
-        if self.audio._loop and not self.audio._loop.is_closed():
-            asyncio.run_coroutine_threadsafe(self._interrupt_speech(), self.audio._loop)
 
     async def _interrupt_speech(self) -> None:
         log.info("Interrupted by user")

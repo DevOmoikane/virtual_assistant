@@ -16,10 +16,6 @@ log = logging.getLogger(__name__)
 
 AudioCallback = Callable[[np.ndarray], Awaitable[None]]
 DeviceCallback = Callable[[list[dict]], None]
-InterruptCallback = Callable[[], None]
-
-BARGE_IN_MULTIPLIER = 3.0
-BARGE_IN_MIN = 0.03
 
 SAMPLE_RATE = settings.stt_sample_rate
 FRAME_SIZE = 480
@@ -33,14 +29,12 @@ MIN_THRESHOLD = 0.003
 
 class AudioService:
     def __init__(self, audio_callback: AudioCallback | None = None,
-                 device_id: int | str | None = None,
-                 interrupt_callback: InterruptCallback | None = None) -> None:
+                 device_id: int | str | None = None) -> None:
         self._callback = audio_callback
         self._running = False
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._device_id = device_id
-        self._interrupt_callback = interrupt_callback
 
         self._buffer: np.ndarray = np.array([], dtype=np.float32)
         self._buffer_lock = threading.Lock()
@@ -114,14 +108,11 @@ class AudioService:
             self._noise_floor += NOISE_FLOOR_ALPHA * (rms - self._noise_floor)
 
     def _process_vad(self, chunk: np.ndarray) -> None:
-        rms = np.sqrt(np.mean(chunk**2))
         with self._mute_lock:
             if self._muted:
-                barge_thresh = max(self._noise_floor * BARGE_IN_MULTIPLIER, BARGE_IN_MIN)
-                if rms > barge_thresh and self._interrupt_callback:
-                    self._muted = False
-                    self._interrupt_callback()
                 return
+
+        rms = np.sqrt(np.mean(chunk**2))
         threshold = self._speech_threshold
         is_speech = rms > threshold
         frame_duration = len(chunk) / SAMPLE_RATE
