@@ -4,12 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://cq0rnn7xqab4b"
-path="res://.godot/imported/carlitos_low_poly2.glb-95b0fdd398200809cb36a0d30e77298b.scn"
+path="res://.godot/imported/carlitos_low_poly2.glb-c47280ef9145be8f742cec32f56b815b.scn"
 
 [deps]
 
-source_file="res://assets/models/carlitos_low_poly2.glb"
-dest_files=["res://.godot/imported/carlitos_low_poly2.glb-95b0fdd398200809cb36a0d30e77298b.scn"]
+source_file="res://assets/models/carlitos/carlitos_low_poly2.glb"
+dest_files=["res://.godot/imported/carlitos_low_poly2.glb-c47280ef9145be8f742cec32f56b815b.scn"]
 
 [params]
 

@@ -26,10 +26,12 @@ This repository contains two sections, a backend made in python with its own vir
 | Service | File | Description |
 |---|---|---|
 | `CameraService` | `services/camera_service.py` | OpenCV capture + MediaPipe face detection + gesture recognition. Auto-selects USB webcam (scans indices 0-3). Startup settle (150 frames). Wave detection via hand x-oscillation. |
-| `AudioService` | `services/audio_service.py` | sounddevice InputStream with adaptive VAD: dynamic noise-floor-based threshold (2.5x multiplier), 0.5s silence timeout, 0.5s min / 15s max speech. Barge-in detection (3x noise floor while muted). Mute/unmute for echo suppression. |
+| `AudioService` | `services/audio_service.py` | sounddevice InputStream with adaptive VAD: dynamic noise-floor-based threshold (2.5x multiplier), 0.3s silence timeout, 0.5s min / 15s max speech. Mute/unmute for echo suppression (buffer cleared on both). |
 | `FaceService` | `services/face_service.py` | insightface `buffalo_l` model for embeddings; ChromaDB collection `faces` for storage/query (L2 distance, threshold 0.8). Register/get_embedding/recognize. |
 | `SttService` | `services/stt_service.py` | faster-whisper (`base` model, int8, auto device). Returns (text, language). |
-| `TtsService` | `services/tts_service.py` | Piper TTS per-language voices. Synchronous playback via sounddevice. `stop()` for interruption. |
+| `TtsService` | `services/tts_service.py` | Local fallback TTS (Piper or Supertonic). Primary TTS is via MCP (see below). |
+| `McpTtsClient` | `services/mcp_tts_client.py` | MCP client for remote TTS server running on the Godot client machine. Eliminates echo (mic/speaker on different machines). Fallback to local TTS if unavailable. |
+| `McpGodotClient` | `services/mcp_godot_client.py` | MCP client for Godot bridge. Controls animations and state via MCP tools. |
 | `LlmService` | `services/llm_service.py` | Ollama chat API. Classify intent (greeting/question/command/opinion/goodbye/other), classify device command (JSON extraction), generate response, decide animation. |
 | `RagService` | `services/rag_service.py` | OpenSearch (KNN + BM25 hybrid) for document retrieval. Ingestion/chunking (300 tokens, 75 overlap). Falls back to ChromaDB via MemoryService if OpenSearch unavailable. |
 | `MemoryService` | `services/memory_service.py` | ChromaDB for interaction history & person events; local JSON for person counter + visit log with stats (total visits, duration, hourly distribution). |
@@ -43,8 +45,28 @@ This repository contains two sections, a backend made in python with its own vir
 - **API routes** (`/api/routes/`): `health.py` (status endpoint), `rag.py` (document CRUD + upload/ingest HTML UI at `/rag`), `telegram.py` (contact CRUD), `ws.py` (WebSocket).
 - **Tests**: pytest with `pytest-asyncio`. 11 test files using mocked `requests`. Run with `uv run pytest`.
 
-### Known issues
+### MCP Architecture
 
+The backend uses MCP (Model Context Protocol) for two external services:
+
+1. **TTS MCP Server** (`backend/tools/tts_mcp_server.py`):
+   - Runs on the Godot client machine (has speakers, no echo conflict with mic)
+   - MCP SSE on port `:7800`, tools: `speak`, `stop`, `is_speaking`
+   - Uses Supertonic for CPU-based TTS synthesis
+   - Fallback to local `TtsService` (Piper/Supertonic on backend) if unavailable
+
+2. **Godot MCP Bridge** (`backend/tools/godot_mcp_bridge.py`):
+   - Python sidecar that hosts both an MCP SSE server (port `:7801`) and a WebSocket server (port `:7802`) concurrently
+   - MCP tools: `play_animation`, `show_text`, `set_state`, `execute_command`
+   - Godot connects TO the bridge as a WebSocket client (not the other way around — `WebSocketServer` does not exist in Godot 4.6)
+   - WebSocket messages are JSON with `type` field (same format as backend messages)
+   - External agents/LLMs can control Godot directly via the MCP bridge
+
+**MCP Clients** (in `backend/virtual_assistant_be/services/`):
+- `mcp_tts_client.py` — `McpTtsClient`: speak/stop/is_speaking
+- `mcp_godot_client.py` — `McpGodotClient`: play_animation/set_state/etc. (currently unused — bridge can be driven by external agents directly)
+
+**Connection flow**: BehaviorController connects to MCP TTS server on `_on_ready()`. Graceful fallback to local TTS if MCP server is unreachable. TTS plays on the client machine, eliminating acoustic echo between backend mic and speakers.
 
 ## Godot Client (Godot 4.6, GL Compatibility)
 
@@ -55,9 +77,9 @@ This repository contains two sections, a backend made in python with its own vir
 ### Scripts
 | Script | Description |
 |---|---|
-| `scripts/websocket.gd` | `WebSocketPeer` to `ws://localhost:7700/api/ws`. Auto-reconnects (3s delay). Sends `{"type":"command","name":"ready"}` on connect. Parses `animation`, `speak`, `listen`, `think`, `state` messages → emits signals. |
+| `scripts/websocket.gd` | Two `WebSocketPeer` clients: one to `ws://localhost:7700/api/ws` (backend), another to `ws://localhost:7802` (MCP bridge). Auto-reconnects (3s delay). Sends `{"type":"command","name":"ready"}` on backend connect. Parses `animation`, `speak`, `listen`, `think`, `state` messages → emits signals. Both connections polled in `_process()`. |
 | `scripts/character.gd` | `Character` class (autoload-style via `extends Node`). `AnimationPlayer` on `$UAL2_Standard/AnimationPlayer`. Maps action names to animations (greet→"Yes", listen→"Idle_FoldArms", think→"Idle_FoldArms", nod→"Yes", shake→"Idle_No", surprised→"Chest_Open", speak→"Idle_TalkingPhone"). Disconnected shader override via `disconnected_shader` material. |
-| `scripts/lobby_scene.gd` | Minimal `Node3D` script — currently a stub (only handles `ToggleConnected` keybind, does nothing). |
+| `scripts/lobby_scene.gd` | Bridges `websocket` signals to `Carlitos` character methods (`execute_action`, `set_connected`, `set_disconnected`). Routes `speaking`/`listening`/`thinking` signals to corresponding character animations. |
 
 ### Structure
 - **Character**: `assets/characters/carlitos.tscn` — Mixamo-rigged low-poly model with `UAL2_Standard` skeleton and `AnimationPlayer`.
@@ -66,11 +88,10 @@ This repository contains two sections, a backend made in python with its own vir
 - **Addons**: `mixamo_animation_retargeter`, `shader_library` (GodotSL).
 
 ### Character connections
-`character.gd` connects to `websocket.gd` signals (`connected`, `disconnected`, `execute_action`, `speaking`, `listening`, `thinking`) but the signal connections **appear to be from Character to itself** (`connect("connected", _on_connected)`) — actual linking to the websocket node's signals is not implemented (the signals need wiring in the scene tree).
+`character.gd`'s `_ready()` no longer has self-connect calls. Signal wiring is done in `lobby_scene.gd` which connects `websocket` node signals to `Carlitos` node methods. `lobby_scene.gd` maps `speaking`/`listening`/`thinking` to `execute_action("speak")`, etc., so the character plays the corresponding animation automatically.
 
 ### Notable observations
 - `character.gd` uses `connect()` calls in `_ready()` but these connect to its own signals (which are never emitted by the script itself) rather than the websocket node's signals.
-- `lobby_scene.gd` is a stub — no logic bridges websocket events to character animations.
 - The websocket auto-reconnect and message handling is fully functional.
 - The lobby scene has a `websocket` child node with `websocket.gd` script, and a `Carlitos` child node (instance of `carlitos.tscn`) that contains the `Character` script.
 
@@ -96,6 +117,26 @@ This repository contains two sections, a backend made in python with its own vir
 - Barge-in detection: while muted, RMS checked against 3x noise-floor threshold to detect user interruption
 - Gesture interruption: open palm detected by camera during TTS stops speech immediately
 - Audio speech buffer cleared on mute to prevent residual echo processing
+- Implement MCP architecture (TTS MCP server + Godot MCP bridge)
+- Create `tools/tts_mcp_server.py` — Supertonic TTS as MCP server on :7800 with `speak`, `stop`, `is_speaking` tools
+- Create `services/mcp_tts_client.py` — backend MCP TTS client with graceful fallback to local TTS
+- Create `tools/godot_mcp_bridge.py` — Python sidecar with concurrent MCP SSE (:7801) and WebSocket server (:7802)
+- Create `services/mcp_godot_client.py` — backend MCP Godot client (not yet wired)
+- Fix Bug 1 (echo ghost audio): `audio_service.py:unmute()` clears `_buffer` and `_raw_buffer`
+- Fix Bug 2 (interrupt loses follow-up): `_interrupt_speech()` sets `self._processing_text = False`
+- Fix Bug 3 (VAD latency): `SILENCE_TIMEOUT` lowered from 0.5s → 0.3s
+- Update `behavior_controller.py` to use MCP TTS client with fallback to local TTS
+- Add `websockets`, `supertonic`, `mcp` dependencies to pyproject.toml
+- Update `config.yaml` + `config.py` with MCP server URLs
+- Fix Godot signal wiring: remove broken self-connects in `character.gd`, wire via `lobby_scene.gd`
+- Fix `godot_mcp_bridge.py` "Already running asyncio" — use `mcp.run_sse_async()` with `asyncio.TaskGroup`
+- Fix `WebSocketServer` not found in Godot 4.6 — replace with second `WebSocketPeer` client to bridge WS
+
+## Deployment
+
+- Whenever you modify files in `godot_client/` or `backend/tools/`, sync them to the remote server at `israel@10.73.19.117:/home/israel/dev/omoikane/visual_assistant` (same relative path as the workspace). That machine runs the Godot app and the TTS MCP server. Use `rsync -avz --delete` or `scp` to sync.
 
 ## Known Issues
-- Godot `character.gd` connects to its own signals instead of the websocket node's signals — no actual animation/state wiring in lobby scene
+- Tests are slow (~225s for behavior controller tests) because `CameraService.__init__` scans 4 camera indices, each taking ~2s to timeout when no camera is available. Consider adding a faster fail mechanism for CI/test environments.
+- `McpGodotClient` (`backend/virtual_assistant_be/services/mcp_godot_client.py`) is created but not yet wired into BehaviorController. External agents can already drive Godot via the MCP bridge directly.
+

@@ -21,7 +21,7 @@ SAMPLE_RATE = settings.stt_sample_rate
 FRAME_SIZE = 480
 CHUNK_DURATION = 3.0
 RAWS_CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION)
-SILENCE_TIMEOUT = 0.5
+SILENCE_TIMEOUT = 0.3
 MIN_SPEECH_DURATION = 0.5
 MAX_SPEECH_DURATION = 15.0
 NOISE_FLOOR_ALPHA = 0.02
@@ -105,6 +105,10 @@ class AudioService:
     def unmute(self) -> None:
         with self._mute_lock:
             self._muted = False
+        with self._buffer_lock:
+            self._buffer = np.array([], dtype=np.float32)
+        with self._raw_buffer_lock:
+            self._raw_buffer = np.array([], dtype=np.float32)
 
     @property
     def _speech_threshold(self) -> float:

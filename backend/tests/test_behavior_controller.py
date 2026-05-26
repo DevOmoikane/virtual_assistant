@@ -151,6 +151,7 @@ class TestBehaviorController:
     async def test_register_name_saves_and_greets(self, controller):
         controller._current_language = "en"
         controller.personality._enabled = False
+        controller.face_service._ready = True
         with (
             patch.object(controller, "_send_speak") as mock_speak,
             patch.object(controller, "_send_listen") as mock_listen,
@@ -167,6 +168,7 @@ class TestBehaviorController:
     @pytest.mark.asyncio
     async def test_register_name_skipped_when_not_pending(self, controller):
         controller._pending_name = None
+        controller.face_service._ready = True
         ok = await controller._register_name("bob")
         assert ok is False
 

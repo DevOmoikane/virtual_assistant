@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://lh0e3jp4jg4l" path="res://scripts/character.gd" id="1_lhuo3"]
 [ext_resource type="AnimationLibrary" uid="uid://ddubvr7s7q4l" path="res://assets/animations/idle_breathing.res" id="1_v1ge5"]
 [ext_resource type="Material" uid="uid://6jfixh2xgkdt" path="res://shaders/materials/hologram_shader_material.tres" id="2_fxplj"]
-[ext_resource type="Texture2D" uid="uid://bgeadhpdrte0f" path="res://assets/models/carlitos_low_poly2_carlos_isra_base_basecolor.png" id="2_lhuo3"]
+[ext_resource type="Texture2D" uid="uid://bgeadhpdrte0f" path="res://assets/models/carlitos/carlitos_low_poly2_carlos_isra_base_basecolor.png" id="2_lhuo3"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_tjijt"]
 radius = 0.14697266
@@ -18193,8 +18193,10 @@ bind/54/name = &"neutral_bone"
 bind/54/bone = -1
 bind/54/pose = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
 
-[node name="Carlitos" type="CharacterBody3D" unique_id=1893086835]
+[node name="Carlitos" type="CharacterBody3D" unique_id=1893086835 node_paths=PackedStringArray("animation_player", "mesh")]
 script = ExtResource("1_lhuo3")
+animation_player = NodePath("UAL2_Standard/AnimationPlayer")
+mesh = NodePath("carlitos_low_poly2/root/GeneralSkeleton/carlitos")
 disconnected_shader = ExtResource("2_fxplj")
 
 [node name="Collision" type="CollisionShape3D" parent="." unique_id=1837080664]

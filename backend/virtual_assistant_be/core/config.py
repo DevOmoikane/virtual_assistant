@@ -60,6 +60,9 @@ class Settings:
     telegram_enabled: bool = True
     telegram_bot_token: str = ""
 
+    mcp_tts_server_url: str = "http://localhost:7800/sse"
+    mcp_godot_server_url: str = "http://localhost:7801/sse"
+
     personality_enabled: bool = False
     personality_style: str = "friendly and courteous"
 
@@ -127,6 +130,10 @@ class Settings:
         telegram = cfg.get("telegram", {})
         self.telegram_enabled = telegram.get("enabled", self.telegram_enabled)
         self.telegram_bot_token = telegram.get("bot_token", self.telegram_bot_token)
+
+        mcp_cfg = cfg.get("mcp", {})
+        self.mcp_tts_server_url = mcp_cfg.get("tts_server_url", self.mcp_tts_server_url)
+        self.mcp_godot_server_url = mcp_cfg.get("godot_server_url", self.mcp_godot_server_url)
 
         personality = cfg.get("personality", {})
         self.personality_enabled = personality.get("enabled", self.personality_enabled)

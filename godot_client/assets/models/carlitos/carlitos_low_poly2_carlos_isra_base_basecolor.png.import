@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bgeadhpdrte0f"
-path.s3tc="res://.godot/imported/carlitos_low_poly2_carlos_isra_base_basecolor.png-859877c65e3cdeb18667872967f50a36.s3tc.ctex"
+path.s3tc="res://.godot/imported/carlitos_low_poly2_carlos_isra_base_basecolor.png-e5517aff1d9bf9087f8487dcae7412ad.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
@@ -14,8 +14,8 @@ generator_parameters={
 
 [deps]
 
-source_file="res://assets/models/carlitos_low_poly2_carlos_isra_base_basecolor.png"
-dest_files=["res://.godot/imported/carlitos_low_poly2_carlos_isra_base_basecolor.png-859877c65e3cdeb18667872967f50a36.s3tc.ctex"]
+source_file="res://assets/models/carlitos/carlitos_low_poly2_carlos_isra_base_basecolor.png"
+dest_files=["res://.godot/imported/carlitos_low_poly2_carlos_isra_base_basecolor.png-e5517aff1d9bf9087f8487dcae7412ad.s3tc.ctex"]
 
 [params]
 

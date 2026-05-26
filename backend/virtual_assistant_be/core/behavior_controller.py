@@ -25,6 +25,7 @@ from virtual_assistant_be.services.llm_service import LlmService
 from virtual_assistant_be.services.rag_service import RagService
 from virtual_assistant_be.services.stt_service import SttService
 from virtual_assistant_be.services.tts_service import TtsService
+from virtual_assistant_be.services.mcp_tts_client import McpTtsClient
 from virtual_assistant_be.services.camera_service import CameraService
 from virtual_assistant_be.services.audio_service import AudioService
 from virtual_assistant_be.services.memory_service import MemoryService
@@ -45,6 +46,7 @@ class BehaviorController:
         self.rag = RagService()
         self.stt = SttService()
         self.tts = TtsService()
+        self.mcp_tts = McpTtsClient(server_url=settings.mcp_tts_server_url)
         self.face_service = FaceService()
         self.camera = CameraService(
             event_callback=self._on_camera_event,
@@ -74,11 +76,19 @@ class BehaviorController:
     def _lang(self, language: str | None = None) -> str:
         return language or self._current_language
 
+    async def _is_speaking(self) -> bool:
+        if self.mcp_tts.is_connected:
+            return await self.mcp_tts.is_speaking()
+        return self.tts.is_speaking
+
     async def _speak(self, text: str, language: str | None = None) -> None:
         lang = self._lang(language)
         self.audio.mute()
         try:
-            await self._run_in_executor(self.tts.speak, text, lang)
+            if self.mcp_tts.is_connected:
+                await self.mcp_tts.speak(text, lang)
+            else:
+                await self._run_in_executor(self.tts.speak, text, lang)
         finally:
             self.audio.unmute()
 
@@ -93,8 +103,12 @@ class BehaviorController:
 
     async def _interrupt_speech(self) -> None:
         log.info("Interrupted by user")
-        self.tts.stop()
+        if self.mcp_tts.is_connected:
+            await self.mcp_tts.stop()
+        else:
+            self.tts.stop()
         self.audio.unmute()
+        self._processing_text = False
         await self._send_listen(True)
 
     def set_send_fn(self, send_fn: SendFn) -> None:
@@ -164,7 +178,7 @@ class BehaviorController:
                 await self.send_animation("nod")
                 await self._say("gesture_thumbs_up")
             case "open_palm":
-                if self.tts.is_speaking:
+                if await self._is_speaking():
                     await self._interrupt_speech()
                 else:
                     await self.send_animation("listen")
@@ -181,7 +195,7 @@ class BehaviorController:
             await self._say("telegram_message", sender=sender, text=text)
 
     async def _on_audio_chunk(self, audio: np.ndarray) -> None:
-        if self._processing_text or self.tts.is_speaking:
+        if self._processing_text or await self._is_speaking():
             log.info("Already speaking or processing, ignoring audio chunk")
             return
         await self._send_listen(True)
@@ -351,6 +365,11 @@ class BehaviorController:
         await self.send_animation("greet")
         await self._send(serialize(StateUpdate(connected=True)))
 
+        try:
+            await self.mcp_tts.connect()
+        except Exception:
+            log.warning("MCP TTS server not available, falling back to local TTS")
+
         loop = asyncio.get_running_loop()
         self.camera.start(loop)
         self.audio.start(loop)
@@ -366,6 +385,7 @@ class BehaviorController:
     async def _cleanup(self) -> None:
         self.camera.stop()
         self.audio.stop()
+        await self.mcp_tts.disconnect()
         await self._run_in_executor(self.telegram.stop_polling)
 
     async def send_state(self, **kwargs) -> None:
