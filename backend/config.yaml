@@ -23,6 +23,12 @@ stt:
   device_id: null
   vad_bypass: false  # false = use custom VAD (adaptive noise floor + silence timeout)
 
+tts:
+  engine: "supertonic"  # "piper" or "supertonic"
+
+supertonic:
+  voice: "M4"
+
 piper:
   default_language: "es"
   voices:

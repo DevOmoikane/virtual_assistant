@@ -42,6 +42,9 @@ class Settings:
     stt_device_id: int | None = None
     stt_vad_bypass: bool = False
 
+    tts_engine: str = "piper"
+    supertonic_voice: str = "M4"
+
     piper_default_language: str = "en"
     piper_voices: dict[str, str] | None = None
 
@@ -84,6 +87,12 @@ class Settings:
         self.stt_chunk_duration = stt.get("chunk_duration", self.stt_chunk_duration)
         self.stt_device_id = stt.get("device_id", self.stt_device_id)
         self.stt_vad_bypass = stt.get("vad_bypass", self.stt_vad_bypass)
+
+        tts_cfg = cfg.get("tts", {})
+        self.tts_engine = tts_cfg.get("engine", self.tts_engine)
+
+        supertonic_cfg = cfg.get("supertonic", {})
+        self.supertonic_voice = supertonic_cfg.get("voice", self.supertonic_voice)
 
         piper_cfg = cfg.get("piper", {})
         self.piper_default_language = piper_cfg.get(
