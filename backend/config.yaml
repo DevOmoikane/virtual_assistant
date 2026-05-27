@@ -7,8 +7,8 @@ chroma:
   url: http://localhost:8100
 host: 0.0.0.0
 mcp:
-  godot_server_url: http://10.73.19.117:7801/sse
-  tts_server_url: http://10.73.19.117:7800/sse
+  godot_server_url: http://localhost:7801/sse
+  tts_server_url: http://localhost:7800/sse
 mediapipe:
   models_dir: null
 ollama:
@@ -31,6 +31,7 @@ piper:
 port: 7700
 rag:
   enabled: true
+  engine: opensearch
 stt:
   chunk_duration: 3.0
   device_id: null

@@ -2395,6 +2395,18 @@ wheels = [
 ]
 
 [[package]]
+name = "rank-bm25"
+version = "0.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/0a/f9579384aa017d8b4c15613f86954b92a95a93d641cc849182467cf0bb3b/rank_bm25-0.2.2.tar.gz", hash = "sha256:096ccef76f8188563419aaf384a02f0ea459503fdf77901378d4fd9d87e5e51d", size = 8347, upload-time = "2022-02-16T12:10:52.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/21/f691fb2613100a62b3fa91e9988c991e9ca5b89ea31c0d3152a3210344f9/rank_bm25-0.2.2-py3-none-any.whl", hash = "sha256:7bd4a95571adadfc271746fa146a4bcfd89c0cf731e49c3d1ad863290adbe8ae", size = 8584, upload-time = "2022-02-16T12:10:50.626Z" },
+]
+
+[[package]]
 name = "referencing"
 version = "0.37.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2960,6 +2972,21 @@ wheels = [
 ]
 
 [[package]]
+name = "turbovec"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a9/bd/16a0097911e2f4f6e61a3ca97a4075df5563882b85043aa6a5d088fe913c/turbovec-0.6.0.tar.gz", hash = "sha256:0aa95146030950421e38b321320e43f4d49da4a29569e222c7ca4fd59d93e343", size = 141511, upload-time = "2026-05-27T17:45:09.89Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0e/00/28a15b9cbc964af8c2bd5c2121184c70f7add1367565e2d27594c8cc9ca4/turbovec-0.6.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:5dd247a1dfebede4d343b1b619838eb720362c740b5b7fd02d3472ba7c5cf088", size = 838007, upload-time = "2026-05-27T17:45:01.588Z" },
+    { url = "https://files.pythonhosted.org/packages/86/1e/d0d73368d725efea10980432785b2f3e84f8bf451dafd9554bdf3947c333/turbovec-0.6.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:a084551a771d52d92172ca7a281c5652b063c5ca50d79613cfc36d55424e2425", size = 6115384, upload-time = "2026-05-27T17:45:03.981Z" },
+    { url = "https://files.pythonhosted.org/packages/12/28/ad566818bb5d1c884ca2b670a3800ca3acdf7990363fd33140c49bca4b66/turbovec-0.6.0-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:62d3c00db2b458328471ad7eb53bf7db17878b9a5a28dfc66ad5ae4885a695ec", size = 13113606, upload-time = "2026-05-27T17:45:06.16Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/75/e9488daeaae5ade871741e20aa70f84fd0045134d8da61b0962bd5263b28/turbovec-0.6.0-cp39-abi3-win_amd64.whl", hash = "sha256:fa9b75ed8561b31c5197f35d83899c074bceda7adf3833b0b0274a935dec1a52", size = 652185, upload-time = "2026-05-27T17:45:08.421Z" },
+]
+
+[[package]]
 name = "typer"
 version = "0.25.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3080,9 +3107,11 @@ dependencies = [
     { name = "python-docx" },
     { name = "python-multipart" },
     { name = "pyyaml" },
+    { name = "rank-bm25" },
     { name = "requests" },
     { name = "sounddevice" },
     { name = "supertonic" },
+    { name = "turbovec" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]
@@ -3110,9 +3139,11 @@ requires-dist = [
     { name = "python-docx" },
     { name = "python-multipart" },
     { name = "pyyaml" },
+    { name = "rank-bm25" },
     { name = "requests" },
     { name = "sounddevice" },
     { name = "supertonic", specifier = ">=1.3.1" },
+    { name = "turbovec" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]

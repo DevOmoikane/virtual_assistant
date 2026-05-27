@@ -134,4 +134,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    anyio.run(main)
+    try:
+        anyio.run(main)
+    except KeyboardInterrupt:
+        log.info("Shutting down Godot MCP bridge...")

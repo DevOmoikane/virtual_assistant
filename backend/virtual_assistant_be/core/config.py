@@ -57,6 +57,7 @@ class Settings:
     gesture_recognition_model: str = ""
 
     rag_enabled: bool = True
+    rag_engine: str = "opensearch"
     telegram_enabled: bool = True
     telegram_bot_token: str = ""
 
@@ -126,6 +127,7 @@ class Settings:
 
         rag_cfg = cfg.get("rag", {})
         self.rag_enabled = rag_cfg.get("enabled", self.rag_enabled)
+        self.rag_engine = rag_cfg.get("engine", self.rag_engine)
 
         telegram = cfg.get("telegram", {})
         self.telegram_enabled = telegram.get("enabled", self.telegram_enabled)

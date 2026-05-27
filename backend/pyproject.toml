@@ -23,6 +23,8 @@ dependencies = [
     "python-multipart",
     "pyyaml",
     "opensearch-py",
+    "turbovec",
+    "rank-bm25",
     "mcp>=1.27.1",
     "supertonic>=1.3.1",
 ]
