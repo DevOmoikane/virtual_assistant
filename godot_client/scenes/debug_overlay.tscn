@@ -1,0 +1,72 @@
+[gd_scene format=3 uid="uid://b22m6o5nxach3"]
+
+[ext_resource type="Script" path="res://scripts/debug_overlay.gd" id="1_h603g"]
+
+[node name="DebugOverlay" type="CanvasLayer"]
+script = ExtResource("1_h603g")
+
+[node name="Background" type="ColorRect" parent="."]
+anchors_preset = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 480.0
+offset_bottom = 160.0
+color = Color(0, 0, 0, 0.7)
+
+[node name="Margin" type="MarginContainer" parent="Background"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -8.0
+
+[node name="VBox" type="VBoxContainer" parent="Background/Margin"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Row0" type="HBoxContainer" parent="Background/Margin/VBox"]
+custom_minimum_size = Vector2(0, 24)
+
+[node name="Label" type="Label" parent="Background/Margin/VBox/Row0"]
+custom_minimum_size = Vector2(80, 0)
+text = "CONN"
+horizontal_alignment = 2
+
+[node name="Value" type="Label" parent="Background/Margin/VBox/Row0"]
+text = "..."
+
+[node name="Row1" type="HBoxContainer" parent="Background/Margin/VBox"]
+custom_minimum_size = Vector2(0, 24)
+
+[node name="Label" type="Label" parent="Background/Margin/VBox/Row1"]
+custom_minimum_size = Vector2(80, 0)
+text = "MODE"
+horizontal_alignment = 2
+
+[node name="Value" type="Label" parent="Background/Margin/VBox/Row1"]
+text = "..."
+
+[node name="Row2" type="HBoxContainer" parent="Background/Margin/VBox"]
+custom_minimum_size = Vector2(0, 24)
+
+[node name="Label" type="Label" parent="Background/Margin/VBox/Row2"]
+custom_minimum_size = Vector2(80, 0)
+text = "HEARD"
+horizontal_alignment = 2
+
+[node name="Value" type="Label" parent="Background/Margin/VBox/Row2"]
+text = "..."
+
+[node name="Row3" type="HBoxContainer" parent="Background/Margin/VBox"]
+custom_minimum_size = Vector2(0, 24)
+
+[node name="Label" type="Label" parent="Background/Margin/VBox/Row3"]
+custom_minimum_size = Vector2(80, 0)
+text = "SPOKEN"
+horizontal_alignment = 2
+
+[node name="Value" type="Label" parent="Background/Margin/VBox/Row3"]
+text = "..."

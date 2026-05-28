@@ -19,6 +19,7 @@ from virtual_assistant_be.core.protocol import (
     DeviceCmd,
     ListenIndicator,
     ThinkIndicator,
+    HeardIndicator,
     serialize,
 )
 from virtual_assistant_be.services.llm_service import LlmService
@@ -277,6 +278,8 @@ class BehaviorController:
         self._processing_text = True
         t_start = time.monotonic()
 
+        await self._send_heard(text)
+
         if await self._register_name(text):
             log_duration("pipeline.register_name", time.monotonic() - t_start)
             self._processing_text = False
@@ -403,6 +406,10 @@ class BehaviorController:
     async def _send_think(self, active: bool) -> None:
         if self._send:
             await self._send(serialize(ThinkIndicator(active=active)))
+
+    async def _send_heard(self, text: str) -> None:
+        if self._send:
+            await self._send(serialize(HeardIndicator(text=text)))
 
     async def _send_listen(self, active: bool) -> None:
         if self._send:

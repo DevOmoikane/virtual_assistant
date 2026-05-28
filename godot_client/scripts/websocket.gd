@@ -15,12 +15,16 @@ var _connected_sent: bool = false
 var _was_connected: bool = false
 var _bridge_connected: bool = false
 
-signal connected()
-signal disconnected()
+signal backend_connected()
+signal backend_disconnected()
+signal bridge_connected()
+signal bridge_disconnected()
 signal execute_action(action: String)
 signal speaking()
-signal listening()
-signal thinking()
+signal spoken(text: String)
+signal listening(active: bool)
+signal thinking(active: bool)
+signal heard(text: String)
 
 
 func _ready():
@@ -78,7 +82,9 @@ func _poll_socket(ws: WebSocketPeer, was_connected: bool, connected_sent: bool, 
 					print("Backend connected, sending ready...")
 					var msg = JSON.stringify({"type": "command", "name": "ready"})
 					ws.send_text(msg)
-					emit_signal("connected")
+					emit_signal("backend_connected")
+				else:
+					emit_signal("bridge_connected")
 
 			while ws.get_available_packet_count():
 				var packet = ws.get_packet()
@@ -90,7 +96,9 @@ func _poll_socket(ws: WebSocketPeer, was_connected: bool, connected_sent: bool, 
 			if was_connected:
 				was_connected = false
 				if not is_bridge:
-					emit_signal("disconnected")
+					emit_signal("backend_disconnected")
+				else:
+					emit_signal("bridge_disconnected")
 				_schedule_reconnect() if not is_bridge else _schedule_bridge_reconnect()
 
 	result["was_connected"] = was_connected
@@ -146,15 +154,20 @@ func _handle_message(raw: String):
 		"speak":
 			var text = data.get("text", "")
 			print("Server says: ", text)
+			emit_signal("spoken", text)
 			emit_signal("speaking")
 		"listen":
 			var active = data.get("active", false)
 			print("Mic listening: ", active)
-			emit_signal("listening")
+			emit_signal("listening", active)
+		"heard":
+			var text = data.get("text", "")
+			print("Heard: ", text)
+			emit_signal("heard", text)
 		"think":
 			var active = data.get("active", false)
 			print("Thinking: ", active)
-			emit_signal("thinking")
+			emit_signal("thinking", active)
 		_:
 			print("Unknown message type: ", msg_type)
 

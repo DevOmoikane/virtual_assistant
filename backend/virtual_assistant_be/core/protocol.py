@@ -36,6 +36,12 @@ class SpeakCmd:
 
 
 @dataclass
+class HeardIndicator:
+    type: str = "heard"
+    text: str = ""
+
+
+@dataclass
 class DeviceCmd:
     type: str = "device"
     device: str = ""
@@ -58,11 +64,11 @@ class GoCommand:
     params: dict[str, Any] | None = None
 
 
-OUTGOING_TYPES = frozenset({"animation", "state", "listen", "think", "speak", "device"})
+OUTGOING_TYPES = frozenset({"animation", "state", "listen", "think", "speak", "heard", "device"})
 INCOMING_TYPES = frozenset({"event", "command"})
 
 
-def serialize(msg: AnimationCmd | StateUpdate | ListenIndicator | ThinkIndicator | SpeakCmd | DeviceCmd) -> dict:
+def serialize(msg: AnimationCmd | StateUpdate | ListenIndicator | ThinkIndicator | SpeakCmd | HeardIndicator | DeviceCmd) -> dict:
     return {k: v for k, v in asdict(msg).items() if v is not None}
 
 
