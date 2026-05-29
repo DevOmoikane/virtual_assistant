@@ -1,5 +1,22 @@
+#!/usr/bin/env python3
+"""
+Godot Simulator — TUI dashboard that replaces the Godot client for development.
+
+Usage:
+  uv run python rnd/godot_sim.py
+
+Commands (type at the prompt):
+  /text <msg>   send text to the assistant
+  /shutdown     shutdown the assistant
+  /quit         disconnect and exit
+  /help         show this help
+"""
+
+from __future__ import annotations
+
 import asyncio
 import json
+import shutil
 import sys
 import time
 from datetime import datetime
@@ -13,103 +30,187 @@ except ImportError:
 
 WS_URL = "ws://localhost:7700/api/ws"
 
-ANSI_RESET = "\033[0m"
-ANSI_BOLD = "\033[1m"
-ANSI_DIM = "\033[2m"
-ANSI_GREEN = "\033[92m"
-ANSI_YELLOW = "\033[93m"
-ANSI_BLUE = "\033[94m"
-ANSI_MAGENTA = "\033[95m"
-ANSI_CYAN = "\033[96m"
-ANSI_RED = "\033[91m"
+# ── ANSI ──────────────────────────────────────────────────
+C = {
+    "reset": "\033[0m",
+    "bold": "\033[1m",
+    "dim": "\033[2m",
+    "green": "\033[92m",
+    "yellow": "\033[93m",
+    "blue": "\033[94m",
+    "magenta": "\033[95m",
+    "cyan": "\033[96m",
+    "red": "\033[91m",
+    "bg_green": "\033[42m",
+    "bg_yellow": "\033[43m",
+    "bg_red": "\033[41m",
+    "bg_blue": "\033[44m",
+    "clear_line": "\033[2K",
+    "clear_screen": "\033[2J\033[H",
+    "hide_cursor": "\033[?25l",
+    "show_cursor": "\033[?25h",
+    "save_cursor": "\033[s",
+    "restore_cursor": "\033[u",
+}
+
+# ── State ─────────────────────────────────────────────────
+class SimState:
+    connected: bool = False
+    listening: bool = False
+    thinking: bool = False
+    person: str | None = None
+    last_heard: str = ""
+    last_speak: str = ""
+    last_animation: str = ""
+    language: str = "es"
+    log: list[str] = []
+    max_log: int = 100
+
+state = SimState()
 
 
 def _ts() -> str:
-    return datetime.now().strftime("%H:%M:%S.%f")[:12]
+    return datetime.now().strftime("%H:%M:%S")
 
 
-def _colorize(msg_type: str, data: dict) -> str:
-    ts = _ts()
+def _term_size() -> tuple[int, int]:
+    c = shutil.get_terminal_size()
+    return c.columns, c.lines
+
+
+def _trunc(s: str, w: int) -> str:
+    return s if len(s) <= w else s[: w - 1] + "…"
+
+
+# ── Rendering ─────────────────────────────────────────────
+def _render(cols: int, rows: int) -> str:
+    lines: list[str] = []
+    sep = "─" * cols
+
+    # ── Header ──
+    conn = f"{C['bg_green']}● Connected{C['reset']}" if state.connected else f"{C['bg_red']}○ Disconnected{C['reset']}"
+    listen = f"{C['green']}●{C['reset']}" if state.listening else f"{C['dim']}○{C['reset']}"
+    think = f"{C['yellow']}●{C['reset']}" if state.thinking else f"{C['dim']}○{C['reset']}"
+    lang = state.language.upper()
+    person = state.person or "—"
+
+    lines.append(f"{C['bold']}Godot Simulator{C['reset']}   {sep[:max(0, cols-20)]}")
+    lines.append(f"  {conn}    Listen: {listen}    Think: {think}")
+    lines.append(f"  Person: {person}    Lang: {lang}")
+    lines.append(f"  Last anim: {C['green']}{state.last_animation or '—'}{C['reset']}")
+    lines.append(sep)
+
+    # ── Heard area ──
+    lines.append(f"{C['bold']}Heard:{C['reset']}")
+    if state.last_heard:
+        lines.append(f"  {C['cyan']}\"{_trunc(state.last_heard, cols-4)}\"{C['reset']}")
+    else:
+        lines.append(f"  {C['dim']}(nothing yet){C['reset']}")
+    lines.append("")
+
+    # ── Speak area ──
+    lines.append(f"{C['bold']}Speak:{C['reset']}")
+    if state.last_speak:
+        text = _trunc(state.last_speak, cols - 4)
+        lines.append(f"  {C['yellow']}\"{text}\"{C['reset']}")
+    else:
+        lines.append(f"  {C['dim']}(nothing yet){C['reset']}")
+    lines.append(sep)
+
+    # ── Log area ──
+    used = len(lines) + 2  # +2 for input prompt area
+    available = rows - used - 1
+    if available > 0 and state.log:
+        lines.append(f"{C['dim']}── log ──{C['reset']}")
+        for entry in state.log[-available:]:
+            lines.append(f"  {entry}")
+        if len(state.log) > available:
+            lines.append(f"  {C['dim']}... {len(state.log) - available} more{C['reset']}")
+    lines.append(sep)
+
+    return "\n".join(lines)
+
+
+def _log(msg: str) -> None:
+    state.log.append(f"{C['dim']}{_ts()}{C['reset']} {msg}")
+    if len(state.log) > state.max_log:
+        state.log = state.log[-state.max_log:]
+
+
+def _redraw() -> None:
+    cols, rows = _term_size()
+    out = _render(cols, rows)
+    sys.stdout.write(C["save_cursor"])
+    sys.stdout.write(C["clear_screen"])
+    sys.stdout.write(out)
+    sys.stdout.write(f"\n{C['bold']}> {C['reset']}")
+    sys.stdout.write(C["restore_cursor"])
+    sys.stdout.flush()
+
+
+# ── WebSocket message handling ────────────────────────────
+def _handle_msg(data: dict) -> None:
+    msg_type = data.get("type", "?")
+
     match msg_type:
         case "animation":
             name = data.get("name", "")
-            return (
-                f"{ANSI_DIM}{ts}{ANSI_RESET} "
-                f"{ANSI_GREEN}{ANSI_BOLD}▸ animation{ANSI_RESET} "
-                f"{ANSI_GREEN}{name}{ANSI_RESET}"
-            )
+            state.last_animation = name
+            _log(f"{C['green']}▸ animation{C['reset']} {name}")
         case "speak":
             text = data.get("text", "")
-            return (
-                f"{ANSI_DIM}{ts}{ANSI_RESET} "
-                f"{ANSI_CYAN}{ANSI_BOLD}▸ speak{ANSI_RESET}  "
-                f"{ANSI_CYAN}\"{text}\"{ANSI_RESET}"
-            )
+            state.last_speak = text
+            _log(f"{C['yellow']}▸ speak{C['reset']} \"{text[:60]}{'…' if len(text) > 60 else ''}\"")
         case "listen":
-            active = data.get("active", False)
-            icon = f"{ANSI_GREEN}●{ANSI_RESET}" if active else f"{ANSI_DIM}○{ANSI_RESET}"
-            return (
-                f"{ANSI_DIM}{ts}{ANSI_RESET} "
-                f"{icon} listen={active}"
-            )
+            state.listening = data.get("active", False)
+            _log(f"▸ listen={state.listening}")
         case "think":
-            active = data.get("active", False)
-            icon = f"{ANSI_YELLOW}●{ANSI_RESET}" if active else f"{ANSI_DIM}○{ANSI_RESET}"
-            return (
-                f"{ANSI_DIM}{ts}{ANSI_RESET} "
-                f"{icon} think={active}"
-            )
+            state.thinking = data.get("active", False)
+            _log(f"▸ think={state.thinking}")
         case "state":
-            connected = data.get("connected", False)
-            return (
-                f"{ANSI_DIM}{ts}{ANSI_RESET} "
-                f"{ANSI_MAGENTA}▸ state{ANSI_RESET}  "
-                f"connected={connected}"
-            )
+            state.connected = data.get("connected", state.connected)
+            _log(f"{C['magenta']}▸ state{C['reset']} connected={state.connected}")
+        case "heard":
+            text = data.get("text", "")
+            state.last_heard = text
+            _log(f"{C['cyan']}▸ heard{C['reset']} \"{text[:60]}{'…' if len(text) > 60 else ''}\"")
         case "device":
-            return (
-                f"{ANSI_DIM}{ts}{ANSI_RESET} "
-                f"{ANSI_RED}▸ device{ANSI_RESET} "
-                f"{json.dumps(data)}"
-            )
+            _log(f"{C['red']}▸ device{C['reset']} {json.dumps(data)}")
         case _:
-            return (
-                f"{ANSI_DIM}{ts}{ANSI_RESET} "
-                f"{ANSI_BOLD}▸ {msg_type}{ANSI_RESET} "
-                f"{json.dumps(data)}"
-            )
+            _log(f"▸ {msg_type} {json.dumps(data)}")
+
+    _redraw()
 
 
+# ── Loops ─────────────────────────────────────────────────
 async def receive_loop(ws: websockets.WebSocketClientProtocol) -> None:
     try:
         async for raw in ws:
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                print(f"{ANSI_RED}invalid json{ANSI_RESET}: {raw}")
+                _log(f"{C['red']}invalid json{C['reset']}: {raw}")
+                _redraw()
                 continue
-
-            msg_type = data.get("type", "?")
-            print(_colorize(msg_type, data))
+            _handle_msg(data)
     except websockets.exceptions.ConnectionClosed:
         pass
 
 
 async def send_loop(ws: websockets.WebSocketClientProtocol) -> None:
     loop = asyncio.get_running_loop()
-    print(
-        f"{ANSI_DIM}── commands ──────────────────────────────{ANSI_RESET}\n"
-        f"  {ANSI_BOLD}/text <msg>{ANSI_RESET}   {ANSI_DIM}send text event to the assistant{ANSI_RESET}\n"
-        f"  {ANSI_BOLD}/shutdown{ANSI_RESET}     {ANSI_DIM}shutdown the assistant{ANSI_RESET}\n"
-        f"  {ANSI_BOLD}/quit{ANSI_RESET}          {ANSI_DIM}disconnect and exit{ANSI_RESET}\n"
-        f"  {ANSI_BOLD}/help{ANSI_RESET}          {ANSI_DIM}show this help{ANSI_RESET}\n"
-        f"{ANSI_DIM}──────────────────────────────────────────{ANSI_RESET}"
+    help_text = (
+        f"  {C['bold']}/text <msg>{C['reset']}   send text event to the assistant\n"
+        f"  {C['bold']}/shutdown{C['reset']}     shutdown the assistant\n"
+        f"  {C['bold']}/quit{C['reset']}          disconnect and exit\n"
+        f"  {C['bold']}/help{C['reset']}          show this help"
     )
 
     while True:
         line = await loop.run_in_executor(None, sys.stdin.readline)
         line = line.strip()
         if not line:
+            _redraw()
             continue
 
         if line.startswith("/"):
@@ -119,13 +220,15 @@ async def send_loop(ws: websockets.WebSocketClientProtocol) -> None:
 
             match cmd:
                 case "quit" | "exit":
-                    print(f"{ANSI_DIM}disconnecting...{ANSI_RESET}")
+                    _log(f"disconnecting...")
+                    _redraw()
                     await ws.close()
                     break
                 case "shutdown":
                     payload = json.dumps({"type": "command", "name": "shutdown"})
                     await ws.send(payload)
-                    print(f"{ANSI_DIM}{_ts()} sent: shutdown{ANSI_RESET}")
+                    _log(f"sent: shutdown")
+                    _redraw()
                 case "text":
                     if args:
                         payload = json.dumps({
@@ -134,18 +237,17 @@ async def send_loop(ws: websockets.WebSocketClientProtocol) -> None:
                             "params": {"text": args},
                         })
                         await ws.send(payload)
-                        print(f"{ANSI_DIM}{_ts()} sent: text \"{args}\"{ANSI_RESET}")
+                        _log(f"sent: text \"{args}\"")
+                        _redraw()
                     else:
-                        print(f"{ANSI_RED}usage: /text <message>{ANSI_RESET}")
+                        _log(f"{C['red']}usage: /text <message>{C['reset']}")
+                        _redraw()
                 case "help":
-                    print(
-                        f"  {ANSI_BOLD}/text <msg>{ANSI_RESET}   send text event\n"
-                        f"  {ANSI_BOLD}/shutdown{ANSI_RESET}     send shutdown command\n"
-                        f"  {ANSI_BOLD}/quit{ANSI_RESET}          disconnect and exit\n"
-                        f"  {ANSI_BOLD}/help{ANSI_RESET}          show this help"
-                    )
+                    print(f"\n{help_text}\n", end="")
+                    _redraw()
                 case _:
-                    print(f"{ANSI_RED}unknown command: /{cmd}{ANSI_RESET}")
+                    _log(f"{C['red']}unknown: /{cmd}{C['reset']}")
+                    _redraw()
         else:
             payload = json.dumps({
                 "type": "event",
@@ -153,37 +255,50 @@ async def send_loop(ws: websockets.WebSocketClientProtocol) -> None:
                 "params": {"text": line},
             })
             await ws.send(payload)
-            print(f"{ANSI_DIM}{_ts()} sent: text \"{line}\"{ANSI_RESET}")
+            _log(f"sent: text \"{line}\"")
+            _redraw()
 
 
 async def main() -> None:
-    print(
-        f"{ANSI_BOLD}Godot Simulator{ANSI_RESET}\n"
-        f"{ANSI_DIM}connecting to {WS_URL} ...{ANSI_RESET}"
-    )
-
+    sys.stdout.write(C["hide_cursor"])
     try:
-        async with websockets.connect(WS_URL) as ws:
-            ready = json.dumps({"type": "command", "name": "ready"})
-            await ws.send(ready)
-            print(f"{ANSI_DIM}{_ts()} sent: ready{ANSI_RESET}")
+        cols, _ = _term_size()
+        sys.stdout.write(C["clear_screen"])
+        sys.stdout.write(f"{C['bold']}Godot Simulator{C['reset']}\n")
+        sys.stdout.write(f"{C['dim']}connecting to {WS_URL} ...{C['reset']}\n")
+        sys.stdout.flush()
 
-            recv_task = asyncio.create_task(receive_loop(ws))
-            send_task = asyncio.create_task(send_loop(ws))
+        try:
+            async with websockets.connect(WS_URL) as ws:
+                ready = json.dumps({"type": "command", "name": "ready"})
+                await ws.send(ready)
+                state.connected = True
+                _log("connected, sent ready")
+                _redraw()
 
-            done, pending = await asyncio.wait(
-                [recv_task, send_task],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+                recv_task = asyncio.create_task(receive_loop(ws))
+                send_task = asyncio.create_task(send_loop(ws))
 
-            for task in pending:
-                task.cancel()
+                done, pending = await asyncio.wait(
+                    [recv_task, send_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
 
-    except websockets.exceptions.ConnectionClosed:
-        print(f"\n{ANSI_RED}connection closed{ANSI_RESET}")
-    except OSError as e:
-        print(f"\n{ANSI_RED}connection failed:{ANSI_RESET} {e}")
-        print(f"  is the backend running at {WS_URL}?")
+                for task in pending:
+                    task.cancel()
+
+        except websockets.exceptions.ConnectionClosed:
+            state.connected = False
+            _log(f"{C['red']}connection closed{C['reset']}")
+            _redraw()
+        except OSError as e:
+            sys.stdout.write(C["clear_screen"])
+            print(f"{C['red']}connection failed:{C['reset']} {e}")
+            print(f"  is the backend running at {WS_URL}?")
+    finally:
+        sys.stdout.write(C["show_cursor"])
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
 
 if __name__ == "__main__":
