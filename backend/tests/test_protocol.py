@@ -36,6 +36,15 @@ class TestSerialize:
         result = serialize(StateUpdate(connected=False))
         assert result == {"type": "state", "connected": False}
 
+    def test_state_update_with_person(self):
+        result = serialize(StateUpdate(connected=True, person="Alice", at="123.45"))
+        assert result == {"type": "state", "connected": True, "person": "Alice", "at": "123.45"}
+
+    def test_state_update_without_person_omits_null(self):
+        result = serialize(StateUpdate(connected=True))
+        assert "person" not in result
+        assert "at" not in result
+
     def test_speak_cmd(self):
         result = serialize(SpeakCmd(text="hello world"))
         assert result == {"type": "speak", "text": "hello world"}

@@ -270,6 +270,9 @@ class CameraService:
                     self._face_hit_streak = 3 if self._person_seen_during_settle else 0
                     self._face_miss_streak = 0
                     log.info("Camera settle done: person_present=%s", self._person_present)
+                    if self._person_present:
+                        name = self._recognize_face()
+                        self._emit("person_appeared", {"name": name} if name else {})
                 return
 
             if faces_detected:

@@ -8,8 +8,6 @@ extends Node3D
 func _ready() -> void:
 	websocket_node.backend_connected.connect(_on_ws_connected)
 	websocket_node.backend_disconnected.connect(_on_ws_disconnected)
-	websocket_node.bridge_connected.connect(_on_bridge_connected)
-	websocket_node.bridge_disconnected.connect(_on_bridge_disconnected)
 	websocket_node.execute_action.connect(_on_execute_action)
 	websocket_node.speaking.connect(_on_speaking)
 	websocket_node.spoken.connect(_on_spoken)
@@ -18,27 +16,19 @@ func _ready() -> void:
 	websocket_node.heard.connect(_on_heard)
 
 	debug_overlay.set_mode("idle")
-	debug_overlay.set_connection(false, false)
+	debug_overlay.set_connection(false)
 
 
 func _on_ws_connected() -> void:
-	debug_overlay.set_connection(true, websocket_node._bridge_connected)
+	debug_overlay.set_connection(true)
 	if character_node.has_method("set_connected"):
 		character_node.set_connected()
 
 
 func _on_ws_disconnected() -> void:
-	debug_overlay.set_connection(false, websocket_node._bridge_connected)
+	debug_overlay.set_connection(false)
 	if character_node.has_method("set_disconnected"):
 		character_node.set_disconnected()
-
-
-func _on_bridge_connected() -> void:
-	debug_overlay.set_connection(websocket_node._was_connected, true)
-
-
-func _on_bridge_disconnected() -> void:
-	debug_overlay.set_connection(websocket_node._was_connected, false)
 
 
 func _on_execute_action(action: String) -> void:

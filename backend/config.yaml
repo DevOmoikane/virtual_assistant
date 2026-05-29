@@ -6,9 +6,6 @@ chroma:
   collection: rag_docs
   url: http://localhost:8100
 host: 0.0.0.0
-mcp:
-  godot_server_url: http://localhost:7801/sse
-  tts_server_url: http://localhost:7800/sse
 mediapipe:
   models_dir: null
 ollama:

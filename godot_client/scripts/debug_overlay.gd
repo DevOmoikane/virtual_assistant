@@ -29,11 +29,8 @@ func _set_line(idx: int, label: String, value: String) -> void:
 		val.text = value
 
 
-func set_connection(backend: bool, bridge: bool) -> void:
-	var s = ""
-	s += "BE: " + ("🟢" if backend else "🔴")
-	s += "  BR: " + ("🟢" if bridge else "🔴")
-	_set_line(0, "CONN", s)
+func set_connection(backend: bool) -> void:
+	_set_line(0, "CONN", "🟢" if backend else "🔴")
 
 
 func set_mode(mode: String) -> void:

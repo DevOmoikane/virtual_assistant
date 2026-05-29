@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
 import pytest
 
-from virtual_assistant_be.core.behavior_controller import BehaviorController
 from virtual_assistant_be.services.face_service import FaceService
 
 TEST_PHOTO = "/Users/israel/dev/omoikane/virtual_assistant/resources/test_photo.jpg"
@@ -160,13 +159,6 @@ class TestFaceServicePhoto:
         assert svc.register("X", np.zeros(512, dtype=np.float32)) is False
 
 
-@pytest.fixture
-def controller():
-    send_fn = AsyncMock()
-    ctrl = BehaviorController(send_fn=send_fn)
-    return ctrl
-
-
 class TestFaceServicePersonality:
     def test_set_and_get_personality(self):
         with patch.object(FaceService, "_ensure_collection"):
@@ -293,37 +285,4 @@ class TestFaceServiceLanguage:
                     pass
 
 
-class TestBehaviorControllerIntegration:
-    """End-to-end unknown→register→recognize flow through BehaviorController."""
 
-    @pytest.mark.asyncio
-    async def test_unknown_flow_sets_pending_name(self, controller):
-        controller._current_language = "en"
-        with (
-            patch.object(controller, "send_animation"),
-            patch.object(controller, "_send_speak"),
-            patch.object(controller, "_send_listen") as mock_listen,
-            patch.object(controller.tts, "speak"),
-            patch.object(controller.memory, "store_person_event"),
-        ):
-            await controller._on_person_appeared(data={})
-            assert controller._pending_name is True
-            mock_listen.assert_awaited_once_with(True)
-
-    @pytest.mark.asyncio
-    async def test_register_name_with_real_embedding(self, controller, reference_embedding):
-        controller._current_language = "en"
-        controller._pending_name = True
-        controller.face_service.last_unknown_embedding = reference_embedding
-
-        with (
-            patch.object(controller, "_send_speak") as mock_speak,
-            patch.object(controller, "_send_listen") as mock_listen,
-            patch.object(controller.tts, "speak"),
-            patch.object(controller.face_service, "register", return_value=True) as mock_register,
-        ):
-            ok = await controller._register_name("Bob")
-            assert ok is True
-            mock_register.assert_called_once_with("Bob", reference_embedding)
-            mock_speak.assert_awaited_once()
-            mock_listen.assert_awaited_once_with(False)

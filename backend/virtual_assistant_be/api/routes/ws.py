@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from virtual_assistant_be.core.protocol import parse, serialize
-from virtual_assistant_be.core.behavior_controller import BehaviorController
+from virtual_assistant_be.core.protocol import parse
+from virtual_assistant_be.pipecat.orchestrator import PipecatOrchestrator
 
 router = APIRouter(prefix="/api/ws", tags=["websocket"])
 log = logging.getLogger(__name__)
@@ -27,15 +28,19 @@ async def websocket_endpoint(websocket: WebSocket):
     _connected = True
     log.info("Godot client connected")
 
-    controller = BehaviorController()
+    orchestrator = PipecatOrchestrator()
 
-    async def send_to_godot(data: dict) -> None:
+    def send_to_godot(data: dict) -> None:
+        asyncio.ensure_future(_send_async(data))
+
+    async def _send_async(data: dict) -> None:
         try:
             await websocket.send_json(data)
         except Exception:
             log.exception("Failed to send to Godot")
 
-    controller.set_send_fn(send_to_godot)
+    orchestrator.set_send_fn(send_to_godot)
+    await orchestrator.start()
 
     try:
         while True:
@@ -53,16 +58,16 @@ async def websocket_endpoint(websocket: WebSocket):
 
             match msg.type:
                 case "event":
-                    await controller.handle_event(msg)
+                    await orchestrator.handle_event(msg)
                 case "command":
-                    await controller.handle_command(msg)
+                    await orchestrator.handle_command(msg)
     except WebSocketDisconnect:
         log.info("Godot client disconnected")
     except Exception:
         log.exception("WebSocket error")
     finally:
-        controller.set_send_fn(None)
-        await controller._cleanup()
+        orchestrator.set_send_fn(None)
+        await orchestrator.stop()
         _connected = False
         try:
             await websocket.close()

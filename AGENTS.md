@@ -102,32 +102,26 @@ The core STT→LLM→TTS conversation loop is handled by the **Pipecat** framewo
 - Barge-in detection: while muted, RMS checked against 3x noise-floor threshold to detect user interruption
 - Gesture interruption: open palm detected by camera during TTS stops speech immediately
 - Audio speech buffer cleared on mute to prevent residual echo processing
-- Implement MCP architecture (TTS MCP server + Godot MCP bridge)
-- Create `tools/tts_mcp_server.py` — Supertonic TTS as MCP server on :7800 with `speak`, `stop`, `is_speaking` tools
-- Create `services/mcp_tts_client.py` — backend MCP TTS client with graceful fallback to local TTS
-- Create `tools/godot_mcp_bridge.py` — Python sidecar with concurrent MCP SSE (:7801) and WebSocket server (:7802)
-- Create `services/mcp_godot_client.py` — backend MCP Godot client (not yet wired)
 - Fix Bug 1 (echo ghost audio): `audio_service.py:unmute()` clears `_buffer` and `_raw_buffer`
 - Fix Bug 2 (interrupt loses follow-up): `_interrupt_speech()` sets `self._processing_text = False`
 - Fix Bug 3 (VAD latency): `SILENCE_TIMEOUT` lowered from 0.5s → 0.3s
 - Update `behavior_controller.py` to use MCP TTS client with fallback to local TTS
-- Add `websockets`, `supertonic`, `mcp` dependencies to pyproject.toml
-- Update `config.yaml` + `config.py` with MCP server URLs
 - Fix Godot signal wiring: remove broken self-connects in `character.gd`, wire via `lobby_scene.gd`
-- Fix `godot_mcp_bridge.py` "Already running asyncio" — use `mcp.run_sse_async()` with `asyncio.TaskGroup`
 - Fix `WebSocketServer` not found in Godot 4.6 — replace with second `WebSocketPeer` client to bridge WS
 
-## In Progress (Pipecat Integration)
-- Install `pipecat-ai[whisper,piper,silero]` dependency
+## Completed (Pipecat Integration)
+- Install `pipecat-ai[kokoro,piper,silero,whisper]>=1.2.1` dependency
 - Create custom frame types (`pipecat/custom_frames.py`): PersonAppearedFrame, PersonDisappearedFrame, GestureFrame, TelegramMessageFrame
-- Create GodotBridgeProcessor (`pipecat/godot_bridge_processor.py`): forwards TranscriptionFrame→"heard", LLMTextFrame→"speak", GestureFrame→"animation" to Godot
+- Create GodotBridgeProcessor (`pipecat/godot_bridge_processor.py`): async send, handles TranscriptionFrame→"heard", LLMTextFrame→"speak", GestureFrame→"animation" to Godot
 - Create pipeline processors (`pipecat/processors.py`): RAGProcessor, PersonalityProcessor, MemoryProcessor, GestureProcessor
-- Create PipecatOrchestrator (`pipecat/orchestrator.py`): lifecycle management, external event injection, frame routing
-- Update `ws.py` to wire PipecatOrchestrator instead of BehaviorController
-- Remove MCP files: `tts_mcp_server.py`, `godot_mcp_bridge.py`, `mcp_tts_client.py`, `mcp_godot_client.py`
-- Remove bridge WebSocket from Godot (`websocket.gd`, `lobby_scene.gd`)
+- Create PipecatOrchestrator (`pipecat/orchestrator.py`): lifecycle management, external event injection, frame routing via PipelineTask/PipelineRunner
+- Create SupertonicTTSService (`pipecat/supertonic_tts.py`): custom Pipecat TTS service wrapping supertonic
+- Update `ws.py` to wire PipecatOrchestrator instead of BehaviorController (sync send fn via asyncio.ensure_future)
+- Remove MCP sidecars: deleted `tts_mcp_server.py`, `godot_mcp_bridge.py`, `mcp_tts_client.py`, `mcp_godot_client.py`
+- Remove bridge WebSocket from Godot: simplified `websocket.gd` (single ws connection), cleaned `lobby_scene.gd`, removed `debug_overlay.gd` bridge status
 - Remove MCP config from `config.yaml`/`config.py`
-- Update `pyproject.toml` (remove mcp/supertonic/websockets, add pipecat-ai)
+- Update `pyproject.toml` (removed `mcp`, `websockets`; kept `pipecat-ai`, `supertonic`)
+- Sync Godot script changes to remote server (10.73.19.117)
 
 ## Deployment
 

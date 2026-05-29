@@ -15,6 +15,8 @@ class AnimationCmd:
 class StateUpdate:
     type: str = "state"
     connected: bool = True
+    person: str | None = None
+    at: str | None = None
 
 
 @dataclass
