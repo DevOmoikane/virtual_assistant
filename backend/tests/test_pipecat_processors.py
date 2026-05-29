@@ -93,14 +93,39 @@ class TestPersonalityProcessor:
         personalize = MagicMock(return_value="Hey there!")
         proc = PersonalityProcessor(personalize_fn=personalize, enabled=True)
         proc._started = True
-        frame = LLMTextFrame(text="Hello")
         push = AsyncMock()
         proc.push_frame = push
-        await proc.process_frame(frame, FrameDirection.DOWNSTREAM)
-        personalize.assert_called_once_with("Hello", "en")
+        await proc.process_frame(LLMTextFrame(text="Hello"), FrameDirection.DOWNSTREAM)
+        personalize.assert_not_called()
+        push.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_buffers_until_end_frame(self):
+        personalize = MagicMock(return_value="Rephrased full response.")
+        proc = PersonalityProcessor(personalize_fn=personalize, enabled=True)
+        proc._started = True
+        push = AsyncMock()
+        proc.push_frame = push
+        await proc.process_frame(LLMTextFrame(text="Hello "), FrameDirection.DOWNSTREAM)
+        await proc.process_frame(LLMTextFrame(text="world"), FrameDirection.DOWNSTREAM)
+        await proc.process_frame(LLMTextFrame(text="!"), FrameDirection.DOWNSTREAM)
+        await proc.process_frame(LLMFullResponseEndFrame(), FrameDirection.DOWNSTREAM)
+        personalize.assert_called_once_with("Hello world!", "")
+        assert push.await_count >= 2
+        push_text = push.call_args_list[0][0][0]
+        assert isinstance(push_text, LLMTextFrame)
+        assert push_text.text == "Rephrased full response."
+        assert isinstance(push.call_args_list[1][0][0], LLMFullResponseEndFrame)
+
+    @pytest.mark.asyncio
+    async def test_disabled_does_not_buffer(self):
+        personalize = MagicMock()
+        proc = PersonalityProcessor(personalize_fn=personalize, enabled=False)
+        proc._started = True
+        push = AsyncMock()
+        proc.push_frame = push
+        await proc.process_frame(LLMTextFrame(text="Hello"), FrameDirection.DOWNSTREAM)
         push.assert_awaited_once()
-        pushed = push.call_args[0][0]
-        assert pushed.text == "Hey there!"
 
     @pytest.mark.asyncio
     async def test_ignores_non_llm_text(self):

@@ -36,6 +36,7 @@ class Settings:
     opensearch_port: int = 9200
     opensearch_index: str = "documents"
 
+    stt_engine: str = "faster_whisper"
     stt_model_size: str = "base"
     stt_sample_rate: int = 16000
     stt_chunk_duration: float = 3.0
@@ -63,6 +64,7 @@ class Settings:
 
     personality_enabled: bool = False
     personality_style: str = "friendly and courteous"
+    assistant_name: str = "Virtual Assistant"
 
     def _apply_yaml(self, cfg: dict) -> None:
         self.host = cfg.get("host", self.host)
@@ -83,6 +85,7 @@ class Settings:
         self.opensearch_index = os_cfg.get("index", self.opensearch_index)
 
         stt = cfg.get("stt", {})
+        self.stt_engine = stt.get("engine", self.stt_engine)
         self.stt_model_size = stt.get("model_size", self.stt_model_size)
         self.stt_sample_rate = stt.get("sample_rate", self.stt_sample_rate)
         self.stt_chunk_duration = stt.get("chunk_duration", self.stt_chunk_duration)
@@ -133,6 +136,7 @@ class Settings:
         personality = cfg.get("personality", {})
         self.personality_enabled = personality.get("enabled", self.personality_enabled)
         self.personality_style = personality.get("style", self.personality_style)
+        self.assistant_name = personality.get("name", self.assistant_name)
 
     def _apply_env(self) -> None:
         env_map = {

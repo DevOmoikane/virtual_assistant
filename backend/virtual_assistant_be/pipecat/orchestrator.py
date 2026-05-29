@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import aiohttp
+import requests
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
@@ -86,15 +87,16 @@ class PipecatOrchestrator:
         self._current_person_name: str | None = None
         self._last_person_greeted: float = 0.0
         self._last_gesture_time: float = 0.0
-
         self._pipeline_task: PipelineTask | None = None
         self._runner: PipelineRunner | None = None
         self._context: LLMContext | None = None
+        self._llm: OLLamaLLMService | None = None
         self._memory_processor: MemoryProcessor | None = None
         self._pending_name_processor: PendingNameProcessor | None = None
         self._transport: LocalAudioTransport | None = None
         self._aiohttp_session: aiohttp.ClientSession | None = None
-
+        self._name_retries: int = 0
+        self._max_name_retries: int = 3
     def set_send_fn(self, send_fn: SendFn | None) -> None:
         self._send_fn = send_fn
 
@@ -107,10 +109,12 @@ class PipecatOrchestrator:
                 fn(data)
 
     async def _speak_text(self, text: str) -> None:
-        if self._pipeline_task:
-            await self._pipeline_task.queue_frames([
-                TTSSpeakFrame(text=text),
-            ])
+        if not self._pipeline_task:
+            return
+        log.debug("_speak_text: pushing TTSSpeakFrame for '%s'", text[:80])
+        await self._pipeline_task.queue_frames([
+            TTSSpeakFrame(text=text),
+        ])
 
     def _lang(self, language: str | None = None) -> str:
         return language or self._current_language
@@ -171,17 +175,36 @@ class PipecatOrchestrator:
             )
         )
 
-        stt = WhisperSTTService(
-            model=settings.stt_model_size,
-            device="auto",
-            compute_type="int8",
-            language="es",
-        )
+        stt_engine = settings.stt_engine
+        if stt_engine == "faster_whisper":
+            from virtual_assistant_be.pipecat.faster_whisper_stt import FasterWhisperSTTService
+            stt = FasterWhisperSTTService(
+                model=settings.stt_model_size,
+                device="auto",
+                compute_type="int8",
+                language="es",
+            )
+        elif stt_engine == "whisper":
+            stt = WhisperSTTService(
+                model=settings.stt_model_size,
+                device="auto",
+                compute_type="int8",
+                language="es",
+            )
+        else:
+            log.warning("Unknown stt_engine '%s', falling back to whisper", stt_engine)
+            stt = WhisperSTTService(
+                model=settings.stt_model_size,
+                device="auto",
+                compute_type="int8",
+                language="es",
+            )
 
-        llm = OLLamaLLMService(
+        self._llm = OLLamaLLMService(
             model=settings.ollama_gen_model,
             base_url=f"{settings.ollama_url}/v1",
         )
+        llm = self._llm
         self._register_llm_tools(llm)
 
         godot_bridge = GodotBridgeProcessor(send_fn=self._send_fn)
@@ -197,8 +220,8 @@ class PipecatOrchestrator:
         def _retrieve_docs(query: str) -> list[str]:
             return self.rag.retrieve(query)
 
-        def _personalize(text: str, language: str) -> str:
-            return self.personality.personalize(text, language)
+        def _personalize(text: str, _: str) -> str:
+            return self.personality.personalize(text, self._current_language)
 
         def _store_interaction(user_text: str, assistant_text: str) -> None:
             self.memory.store_interaction(user_text, assistant_text)
@@ -224,8 +247,8 @@ class PipecatOrchestrator:
             self._memory_processor,
             godot_bridge,
             tts,
-            self._transport.output(),
             GestureProcessor(),
+            self._transport.output(),
         ])
 
         self._pipeline_task = PipelineTask(
@@ -280,7 +303,7 @@ class PipecatOrchestrator:
         llm.register_function("home_assistant", home_assistant_handler)
 
     async def _inject_user_text(self, text: str, language: str | None = None) -> None:
-        await self._context.add_message({
+        self._context.add_message({
             "role": "user",
             "content": text,
         })
@@ -291,7 +314,7 @@ class PipecatOrchestrator:
     async def start(self) -> None:
         await self._create_pipeline()
 
-        initial_prompt = t("system_prompt", "en")
+        initial_prompt = t("system_prompt", "es", name=settings.assistant_name)
 
         self._context.add_message({"role": "system", "content": initial_prompt})
         self._context.add_message({
@@ -387,6 +410,7 @@ class PipecatOrchestrator:
             self._pending_name = True
             if self._pending_name_processor:
                 self._pending_name_processor.pending = True
+                self._pending_name_processor._intercept_cooldown = time.monotonic() + self._pending_name_processor._cooldown_seconds
             if self._pipeline_task:
                 await self._pipeline_task.queue_frames([
                     PersonAppearedFrame(person_name=None),
@@ -437,9 +461,46 @@ class PipecatOrchestrator:
         if self._pipeline_task:
             await self._inject_user_text(f"[Telegram from {sender}]: {text}")
 
+    async def _classify_is_name(self, text: str) -> bool:
+        if not self._llm:
+            return True
+        prompt = (
+            f'Is "{text}" a person\'s name (first name or full name)? '
+            f"Answer only 'yes' or 'no'."
+        )
+        url = f"{settings.ollama_url}/api/chat"
+        payload = {
+            "model": settings.ollama_gen_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+        }
+        log.debug("classify_is_name request: text=%s", text)
+        try:
+            resp = await asyncio.to_thread(
+                lambda: requests.post(url, json=payload, timeout=10)
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = (data.get("message", {}) or {}).get("content", "") or ""
+            log.debug("classify_is_name response: %s", content)
+            return content.strip().lower().startswith("y")
+        except Exception as e:
+            log.warning("classify_is_name error: %s", e)
+            return True
+
     async def _register_name(self, text: str) -> bool:
         if not self._pending_name or not self.face_service.enabled:
             return False
+        is_name = await self._classify_is_name(text)
+        if not is_name:
+            self._name_retries += 1
+            if self._name_retries >= self._max_name_retries:
+                self._pending_name = False
+                if self._pending_name_processor:
+                    self._pending_name_processor.pending = False
+            await self._inject_user_text(text, self._current_language)
+            return True
+        self._name_retries = 0
         name = text.strip().title()
         emb = self.face_service.last_unknown_embedding
         if emb is not None:

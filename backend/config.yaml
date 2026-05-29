@@ -19,6 +19,7 @@ opensearch:
 personality:
   enabled: true
   style: friendly and courteous
+  name: Carlitos
 piper:
   default_language: es
   voices:
@@ -30,6 +31,7 @@ rag:
   enabled: true
   engine: opensearch
 stt:
+  engine: faster_whisper
   chunk_duration: 3.0
   device_id: null
   model_size: base

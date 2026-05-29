@@ -15,9 +15,10 @@ en:
 
   # System prompts
   sys_respond_in: "Respond in {lang_name}."
-  sys_you_are: "You are a {style} virtual assistant."
+  sys_you_are: "You are {name}, a {style} virtual assistant. Your name is {name}."
   sys_rephrase: "Rephrase the following message to match your personality. Keep the exact same meaning. Keep all named entities and numbers exactly as they are. Respond only in {lang_name}. Respond with ONLY the rephrased message, no quotes, no explanation, no extra text."
   sys_translate_to: "Translate the following personality trait to {lang_name}. Reply with ONLY the translation, no explanation, no quotes."
+  system_prompt: "You are {name}, a helpful {style} virtual assistant. Your name is {name}. Be concise, friendly, and natural."
 
 es:
   greeting_ready: "¡Hola! Estoy listo para ayudar."
@@ -36,6 +37,7 @@ es:
 
   # System prompts
   sys_respond_in: "Responde en {lang_name}."
-  sys_you_are: "Eres un asistente virtual {style}."
+  sys_you_are: "Eres {name}, un asistente virtual {style}. Tu nombre es {name}."
   sys_rephrase: "Reformula el siguiente mensaje para que coincida con tu personalidad. Mantén el mismo significado exacto. Mantén todas las entidades nombradas y números exactamente como están. Responde únicamente en {lang_name}. Responde SOLO con el mensaje reformulado, sin comillas, sin explicación, sin texto adicional."
   sys_translate_to: "Traduce el siguiente rasgo de personalidad a {lang_name}. Responde SOLO con la traducción, sin explicación, sin comillas."
+  system_prompt: "Eres {name}, un asistente virtual {style} y servicial. Tu nombre es {name}. Sé conciso, amigable y natural."

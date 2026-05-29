@@ -1,15 +1,15 @@
 import asyncio
 import logging
-from collections.abc import Callable
+import time
+from typing import Callable
 
 from pipecat.frames.frames import (
     Frame,
     InterruptionFrame,
     LLMContextFrame,
-    LLMFullResponseEndFrame,
-    LLMFullResponseStartFrame,
     LLMTextFrame,
-    TextFrame,
+    LLMFullResponseEndFrame,
+    TTSStoppedFrame,
     TranscriptionFrame,
     UserStoppedSpeakingFrame,
 )
@@ -66,13 +66,26 @@ class PersonalityProcessor(FrameProcessor):
         super().__init__(**kwargs)
         self._personalize_fn = personalize_fn
         self._enabled = enabled
+        self._buffer: list[str] = []
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 
-        if isinstance(frame, LLMTextFrame) and self._enabled and self._personalize_fn:
-            personalized = self._personalize_fn(frame.text, "en")
-            await self.push_frame(LLMTextFrame(text=personalized), direction)
+        if not self._enabled or not self._personalize_fn:
+            await self.push_frame(frame, direction)
+            return
+
+        if isinstance(frame, LLMTextFrame):
+            self._buffer.append(frame.text)
+            return
+
+        if isinstance(frame, LLMFullResponseEndFrame):
+            full_text = "".join(self._buffer)
+            self._buffer.clear()
+            if full_text:
+                personalized = self._personalize_fn(full_text, "")
+                await self.push_frame(LLMTextFrame(text=personalized), direction)
+            await self.push_frame(frame, direction)
             return
 
         await self.push_frame(frame, direction)
@@ -108,14 +121,20 @@ class MemoryProcessor(FrameProcessor):
 
 
 class GestureProcessor(FrameProcessor):
-    def __init__(self, **kwargs):
+    def __init__(self, on_tts_stopped: Callable | None = None, **kwargs):
         super().__init__(**kwargs)
+        self._on_tts_stopped = on_tts_stopped
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 
         if isinstance(frame, GestureFrame) and frame.gesture == "open_palm":
             await self.push_frame(InterruptionFrame(), FrameDirection.UPSTREAM)
+
+        if isinstance(frame, TTSStoppedFrame):
+            log.debug("GestureProcessor received TTSStoppedFrame")
+            if self._on_tts_stopped:
+                self._on_tts_stopped()
 
         await self.push_frame(frame, direction)
 
@@ -130,6 +149,8 @@ class PendingNameProcessor(FrameProcessor):
         self._register_callback = register_callback
         self.pending = False
         self._intercepted = False
+        self._intercept_cooldown: float = 0.0
+        self._cooldown_seconds: float = 8.0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -137,6 +158,10 @@ class PendingNameProcessor(FrameProcessor):
         if self.pending and isinstance(frame, TranscriptionFrame):
             text = frame.text.strip()
             if text and self._register_callback:
+                now = time.monotonic()
+                if now < self._intercept_cooldown:
+                    return
+                self._intercept_cooldown = now + self._cooldown_seconds
                 self._intercepted = True
                 await self._register_callback(text)
             return

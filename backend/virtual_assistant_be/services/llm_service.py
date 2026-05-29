@@ -40,6 +40,7 @@ Question: {prompt}"""
 
         messages.append({"role": "user", "content": user_msg})
 
+        log.debug("Ollama request: model=%s messages=%s", self.gen_model, messages)
         with Timer("llm.generate"):
             try:
                 resp = requests.post(
@@ -48,7 +49,9 @@ Question: {prompt}"""
                     timeout=30,
                 )
                 resp.raise_for_status()
-                return resp.json()["message"]["content"]
+                content = resp.json()["message"]["content"]
+                log.debug("Ollama response: %s", content)
+                return content
             except requests.RequestException as e:
                 log.error("Ollama generate error: %s", e)
                 return ""

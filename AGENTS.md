@@ -16,19 +16,20 @@ This repository contains two sections, a backend made in python with its own vir
 - Serialize strips `None` values; parse dispatches by `type`.
 
 ### Pipecat Pipeline (`backend/virtual_assistant_be/pipecat/`)
-The core STT→LLM→TTS conversation loop is handled by the **Pipecat** framework (`pipecat-ai`), replacing the previous custom `BehaviorController` pipeline.
+The core STT→LLM→TTS conversation loop is handled by the **Pipecat** framework (`pipecat-ai`).
 
 - **Orchestrator** (`pipecat/orchestrator.py` — `PipecatOrchestrator`): manages lifecycle (ready→start, shutdown→stop), handles external events (camera, telegram), injects frames into the Pipecat pipeline. Retains name registration state, gesture debouncing.
 - **Pipeline** (`pipecat/processors.py`):
   ```
-  AudioService VAD → SttService → TranscriptionFrame → LLMUserAggregator →
-  RAGProcessor → OLLamaLLMService → PersonalityProcessor →
-  GodotBridgeProcessor → PiperTTSService → LLMAssistantAggregator → MemoryProcessor
+  transport.input() → stt → PendingNameProcessor → user_agg →
+  RAGProcessor → LLM(Ollama) → PersonalityProcessor → assistant_agg →
+  MemoryProcessor → GodotBridgeProcessor → TTS(Supertonic) →
+  GestureProcessor → transport.output()
   ```
 - **GodotBridgeProcessor** (`pipecat/godot_bridge_processor.py`): custom `FrameProcessor` that forwards `TranscriptionFrame`→`"heard"`, `LLMTextFrame`→`"speak"`, `GestureFrame`→`"animation"` etc. to Godot via WebSocket.
 - **Custom frames** (`pipecat/custom_frames.py`): `PersonAppearedFrame`, `PersonDisappearedFrame`, `GestureFrame`, `TelegramMessageFrame` for external event injection.
-- **Audio/VAD**: `AudioService` (sounddevice) still handles capture + adaptive VAD. Speech segments are transcribed via `SttService`, then `TranscriptionFrame` + `UserStoppedSpeakingFrame` are pushed into the pipeline.
-- **TTS**: `PiperTTSService` (Pipecat) plays locally on the backend machine. No remote MCP TTS.
+- **TTS**: `SupertonicTTSService` (pipecat/supertonic_tts.py) wraps supertonic TTS. Configurable via `tts_engine` (piper/kokoro/xtts/supertonic).
+- **External TTS messages**: `_speak_text()` pushes `TTSSpeakFrame` directly into the pipeline (no async queue). The TTS service internally serializes via `_processing_text`.
 - **LLM tool calling**: `OLLamaLLMService.register_function()` for device commands (lights, door, telegram, home_assistant).
 - **Barge-in/interruption**: Pipecat's `InterruptionFrame` mechanism + `GestureProcessor` (open_palm gesture).
 
@@ -39,7 +40,7 @@ The core STT→LLM→TTS conversation loop is handled by the **Pipecat** framewo
 | `AudioService` | `services/audio_service.py` | sounddevice InputStream with adaptive VAD: dynamic noise-floor-based threshold (2.5x multiplier), 0.3s silence timeout, 0.5s min / 15s max speech. Mute/unmute for echo suppression (buffer cleared on both). |
 | `FaceService` | `services/face_service.py` | insightface `buffalo_l` model for embeddings; ChromaDB collection `faces` for storage/query (L2 distance, threshold 0.8). Register/get_embedding/recognize. |
 | `SttService` | `services/stt_service.py` | faster-whisper (`base` model, int8, auto device). Returns (text, language). |
-| `TtsService` | `services/tts_service.py` | Local fallback TTS (Piper or Supertonic). Primary TTS is via PiperTTSService (Pipecat). |
+| `TtsService` | `services/tts_service.py` | Local fallback TTS (Piper or Supertonic). Primary TTS is via SupertonicTTSService (Pipecat). |
 | `LlmService` | `services/llm_service.py` | Ollama chat API. Classify intent (greeting/question/command/opinion/goodbye/other), classify device command (JSON extraction), generate response, decide animation. Used by Pipecat's custom processors. |
 | `RagService` | `services/rag_service.py` | OpenSearch (KNN + BM25 hybrid) for document retrieval. Ingestion/chunking (300 tokens, 75 overlap). Falls back to ChromaDB via MemoryService if OpenSearch unavailable. |
 | `MemoryService` | `services/memory_service.py` | ChromaDB for interaction history & person events; local JSON for person counter + visit log with stats (total visits, duration, hourly distribution). |
@@ -122,6 +123,8 @@ The core STT→LLM→TTS conversation loop is handled by the **Pipecat** framewo
 - Remove MCP config from `config.yaml`/`config.py`
 - Update `pyproject.toml` (removed `mcp`, `websockets`; kept `pipecat-ai`, `supertonic`)
 - Sync Godot script changes to remote server (10.73.19.117)
+- Add `FasterWhisperSTTService` for faster-whisper integration (pipecat/faster_whisper_stt.py)
+- Fix TTS queue: remove async queue/worker/event mechanism, push `TTSSpeakFrame` directly (TTS already serializes internally via `_processing_text`)
 
 ## Deployment
 
@@ -129,4 +132,12 @@ The core STT→LLM→TTS conversation loop is handled by the **Pipecat** framewo
 
 ## Known Issues
 - Tests are slow (~225s for behavior controller tests) because `CameraService.__init__` scans 4 camera indices, each taking ~2s to timeout when no camera is available. Consider adding a faster fail mechanism for CI/test environments.
+
+## Current Issues (WIP)
+- TTS only speaks one message — second `TTSSpeakFrame` fails silently. Suspicions:
+  - `_audio_context_task_handler` background task pushes `TTSStoppedFrame` asynchronously — timing issue reaching `GestureProcessor`
+  - `_processing_text` flag may prevent second TTSSpeakFrame from being processed
+  - Pipeta TTS internal context management may interfere across sequential TTSSpeakFrames
+  - Try: bypass TTS queue, push directly (done — testing needed)
+- Next step: deploy and test if direct push fixes the issue. If not, add frame-level logging through TTS→GestureProcessor path.
 

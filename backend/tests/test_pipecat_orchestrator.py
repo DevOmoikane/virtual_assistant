@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -134,9 +135,9 @@ class TestPipecatOrchestrator:
 
     async def test_inject_user_text_adds_context_and_triggers_llm(self, orchestrator):
         orchestrator._pipeline_task = AsyncMock()
-        orchestrator._context = AsyncMock()
+        orchestrator._context = MagicMock()
         await orchestrator._inject_user_text("hello")
-        orchestrator._context.add_message.assert_awaited_once_with({"role": "user", "content": "hello"})
+        orchestrator._context.add_message.assert_called_once_with({"role": "user", "content": "hello"})
         orchestrator._pipeline_task.queue_frames.assert_awaited_once()
 
     async def test_register_name_saves_and_speaks(self, orchestrator):

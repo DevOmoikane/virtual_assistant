@@ -17,6 +17,7 @@ class PersonalityService:
         cfg = settings
         self._enabled = cfg.personality_enabled
         self._style = cfg.personality_style
+        self._name = cfg.assistant_name
         self._llm = LlmService()
         self._cache: dict[str, str] = {}
 
@@ -55,7 +56,7 @@ class PersonalityService:
 
         translated_style = self._translate_style(self._style, language)
         system = (
-            t("sys_you_are", language, style=translated_style) + " "
+            t("sys_you_are", language, name=self._name, style=translated_style) + " "
             + t("sys_rephrase", language, lang_name=lang_name(language))
         )
         with Timer("personality.personalize"):
