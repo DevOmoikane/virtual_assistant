@@ -293,6 +293,25 @@ class MemoryService:
             log.warning("Failed to fetch recent events", exc_info=True)
             return []
 
+    def clear_all(self) -> None:
+        if self._collection_id:
+            try:
+                requests.delete(f"{CHROMA_BASE}/{self._collection_id}", timeout=10)
+            except Exception:
+                pass
+            self._collection_id = None
+        self._person_count = 0
+        self._visits.clear()
+        self._person_appeared_at = None
+        self._current_visit_id = None
+        for path in (self._counter_file, self._visits_file):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+        log.info("All memory data cleared")
+
     def search(self, query: str, k: int = 3) -> list[str]:
         collection_id = self._ensure_collection()
         if not collection_id:

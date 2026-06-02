@@ -59,9 +59,12 @@ Question: {prompt}"""
     def classify_intent(self, text: str) -> str:
         with Timer("llm.classify_intent"):
             system = (
-                "You classify user input into one of: "
-                "greeting, question, command, opinion, change_personality, goodbye, other. "
-                "Reply with only the label, no explanation."
+                "Classify the user's intent into ONE label: "
+                "greeting, question, opinion, goodbye, switch_language, change_personality, device_command, other. "
+                "For switch_language also detect the target language. "
+                "If switch_language: reply with the label and code separated by '|' "
+                "(e.g. 'switch_language|en' or 'switch_language|es'). "
+                "Otherwise reply with only the label."
             )
             result = self.generate(text.strip(), system=system).strip().lower()
         return result
@@ -105,6 +108,16 @@ Question: {prompt}"""
         except json.JSONDecodeError:
             log.warning("Failed to parse device command from LLM response: %s", response)
         return None
+
+    def extract_personality(self, text: str) -> str:
+        with Timer("llm.extract_personality"):
+            system = (
+                "Extract the personality trait the user wants the assistant to adopt. "
+                "Reply with only a short adjective or phrase describing the desired personality, "
+                "no explanation, no quotes."
+            )
+            result = self.generate(text.strip(), system=system).strip().lower().strip("\"'")
+        return result
 
     def generate_response(self, user_input: str, context: str | None = None, language: str | None = None) -> tuple[str, str]:
         with Timer("llm.generate_response"):

@@ -37,9 +37,9 @@ class TestRAGProcessor:
     @pytest.mark.asyncio
     async def test_injects_context_into_single_user_message(self):
         retrieve = MagicMock(return_value=["doc1", "doc2"])
-        proc = RAGProcessor(retrieve_fn=retrieve)
+        proc = RAGProcessor(retrieve_fn=retrieve, language_fn=lambda: "en")
         proc._started = True
-        ctx = {"messages": [{"role": "user", "content": "what is X?"}]}
+        ctx = {"messages": [{"role": "user", "content": "I want to know information about X"}]}
         frame = LLMContextFrame(context=ctx)
         push = AsyncMock()
         proc.push_frame = push
@@ -51,9 +51,22 @@ class TestRAGProcessor:
         push.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_skips_rag_without_trigger_phrase(self):
+        retrieve = MagicMock(return_value=["doc"])
+        proc = RAGProcessor(retrieve_fn=retrieve, language_fn=lambda: "en")
+        proc._started = True
+        ctx = {"messages": [{"role": "user", "content": "what is X?"}]}
+        frame = LLMContextFrame(context=ctx)
+        push = AsyncMock()
+        proc.push_frame = push
+        await proc.process_frame(frame, FrameDirection.DOWNSTREAM)
+        assert len(ctx["messages"]) == 1  # no system message injected
+        retrieve.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_no_injection_without_user_message(self):
         retrieve = MagicMock(return_value=["doc"])
-        proc = RAGProcessor(retrieve_fn=retrieve)
+        proc = RAGProcessor(retrieve_fn=retrieve, language_fn=lambda: "en")
         proc._started = True
         ctx = {"messages": []}
         frame = LLMContextFrame(context=ctx)
@@ -65,7 +78,7 @@ class TestRAGProcessor:
     @pytest.mark.asyncio
     async def test_ignores_non_llmcontext_frame(self):
         retrieve = MagicMock()
-        proc = RAGProcessor(retrieve_fn=retrieve)
+        proc = RAGProcessor(retrieve_fn=retrieve, language_fn=lambda: "en")
         proc._started = True
         frame = LLMTextFrame(text="test")
         push = AsyncMock()

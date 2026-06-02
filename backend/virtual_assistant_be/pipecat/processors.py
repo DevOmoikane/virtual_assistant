@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 from typing import Callable
 
@@ -15,15 +16,42 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
+from virtual_assistant_be.core.translations import translate as t
 from virtual_assistant_be.pipecat.custom_frames import GestureFrame
 
 log = logging.getLogger(__name__)
 
 
 class RAGProcessor(FrameProcessor):
-    def __init__(self, retrieve_fn: Callable[[str], list[str]] | None = None, **kwargs):
+    """Retrieves documents only when the user explicitly requests it.
+
+    Detects the language-specific trigger phrase (e.g. "I want to know
+    information about …") in the last user message.  If found, the
+    query portion (text after the trigger) is used for retrieval.
+    Otherwise RAG is skipped entirely.
+    """
+
+    def __init__(
+        self,
+        retrieve_fn: Callable[[str], list[str]] | None = None,
+        language_fn: Callable[[], str] | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._retrieve_fn = retrieve_fn
+        self._language_fn = language_fn
+
+    @staticmethod
+    def _extract_query(text: str, language: str) -> str | None:
+        trigger = t("rag_trigger", language)
+        if not trigger:
+            return None
+        # case-insensitive match
+        escaped = re.escape(trigger)
+        m = re.match(escaped, text, re.IGNORECASE)
+        if m:
+            return text[m.end():].strip()
+        return None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -39,19 +67,25 @@ class RAGProcessor(FrameProcessor):
             user_msgs = [m for m in msgs if isinstance(m, dict) and m.get("role") == "user"]
             if len(user_msgs) >= 1:
                 query = user_msgs[-1].get("content", "")
-                docs = await asyncio.to_thread(self._retrieve_fn, query)
-                if docs:
-                    context_text = "\n\n".join(docs)
-                    if hasattr(context, "add_message"):
-                        context.add_message({
-                            "role": "system",
-                            "content": f"Context information:\n{context_text}",
-                        })
-                    elif isinstance(context, dict):
-                        context.setdefault("messages", []).insert(-1, {
-                            "role": "system",
-                            "content": f"Context information:\n{context_text}",
-                        })
+                lang = self._language_fn() if self._language_fn else "en"
+                rag_query = self._extract_query(query, lang)
+                if rag_query:
+                    log.info("RAG triggered by '%s' — query: %s", query[:40], rag_query[:60])
+                    docs = await asyncio.to_thread(self._retrieve_fn, rag_query)
+                    if docs:
+                        context_text = "\n\n".join(docs)
+                        if hasattr(context, "add_message"):
+                            context.add_message({
+                                "role": "system",
+                                "content": f"Context information:\n{context_text}",
+                            })
+                        elif isinstance(context, dict):
+                            context.setdefault("messages", []).insert(-1, {
+                                "role": "system",
+                                "content": f"Context information:\n{context_text}",
+                            })
+                else:
+                    log.debug("RAG skipped (no trigger in message)")
 
         await self.push_frame(frame, direction)
 
@@ -169,5 +203,51 @@ class PendingNameProcessor(FrameProcessor):
         if self._intercepted and isinstance(frame, UserStoppedSpeakingFrame):
             self._intercepted = False
             return
+
+        await self.push_frame(frame, direction)
+
+
+class IntentRouter(FrameProcessor):
+    """Classifies user intent and routes routable intents upstream
+    (switch_language, change_personality) without reaching the
+    conversational LLM.  Conversational intents pass through to the LLM
+    which has MCP tools for device commands.
+    """
+
+    def __init__(
+        self,
+        llm_service=None,
+        on_switch_language=None,
+        on_change_personality=None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self._llm_service = llm_service
+        self._on_switch_language = on_switch_language
+        self._on_change_personality = on_change_personality
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, TranscriptionFrame):
+            text = frame.text.strip()
+            if text and self._llm_service:
+                intent = await asyncio.to_thread(self._llm_service.classify_intent, text)
+                log.debug("IntentRouter: '%s' → %s", text[:50], intent)
+
+                if intent.startswith("switch_language"):
+                    parts = intent.split("|")
+                    lang = parts[1] if len(parts) > 1 else ""
+                    if lang in ("en", "es") and self._on_switch_language:
+                        msg = self._on_switch_language(lang)
+                        if msg:
+                            await self.push_frame(TTSSpeakFrame(text=msg))
+                    return
+
+                if intent == "change_personality" and self._on_change_personality:
+                    msg = self._on_change_personality(text)
+                    if msg:
+                        await self.push_frame(TTSSpeakFrame(text=msg))
+                    return
 
         await self.push_frame(frame, direction)

@@ -22,6 +22,7 @@ RECOGNITION_THRESHOLD = 0.8
 _DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
 _PERSONALITY_FILE = os.path.join(_DATA_DIR, "person_personality.json")
 _LANGUAGE_FILE = os.path.join(_DATA_DIR, "person_language.json")
+_CONVERSATION_FILE = os.path.join(_DATA_DIR, "person_conversation.json")
 
 
 class FaceService:
@@ -35,6 +36,7 @@ class FaceService:
         self.last_unknown_embedding: np.ndarray | None = None
         self._personalities: dict[str, str] = self._load_personalities()
         self._languages: dict[str, str] = self._load_languages()
+        self._conversation_config: dict[str, dict] = self._load_conversation_config()
 
         try:
             self._initialize()
@@ -200,6 +202,63 @@ class FaceService:
 
     def get_language(self, name: str) -> str | None:
         return self._languages.get(name)
+
+    # --- Conversation-initiation storage ---
+
+    def _load_conversation_config(self) -> dict[str, dict]:
+        try:
+            with open(_CONVERSATION_FILE) as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+        except Exception:
+            log.warning("Failed to load conversation config", exc_info=True)
+            return {}
+
+    def _save_conversation_config(self) -> None:
+        try:
+            os.makedirs(_DATA_DIR, exist_ok=True)
+            with open(_CONVERSATION_FILE, "w") as f:
+                json.dump(self._conversation_config, f, indent=2)
+        except Exception:
+            log.warning("Failed to save conversation config", exc_info=True)
+
+    def get_conversation_config(self, name: str) -> dict:
+        return self._conversation_config.get(name, {})
+
+    def set_conversation_config(self, name: str, initiate: bool = False, idle_timeout: int | None = None) -> bool:
+        cfg = self._conversation_config.get(name, {})
+        changed = False
+        if cfg.get("initiate") != initiate:
+            cfg["initiate"] = initiate
+            changed = True
+        if idle_timeout is not None and cfg.get("idle_timeout") != idle_timeout:
+            cfg["idle_timeout"] = idle_timeout
+            changed = True
+        if changed:
+            self._conversation_config[name] = cfg
+            self._save_conversation_config()
+            log.info("Conversation config for '%s': initiate=%s, idle_timeout=%s", name, initiate, idle_timeout)
+        return True
+
+    def clear_all(self) -> None:
+        if self._collection_id:
+            try:
+                requests.delete(self._collection_url(), timeout=10)
+            except Exception:
+                pass
+            self._collection_id = None
+        self._personalities.clear()
+        self._languages.clear()
+        self._conversation_config.clear()
+        self.last_unknown_embedding = None
+        for path in (_PERSONALITY_FILE, _LANGUAGE_FILE, _CONVERSATION_FILE):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+        log.info("All face data cleared")
 
     def register(self, name: str, embedding: np.ndarray) -> bool:
         if not self._ready or self._collection_id is None:

@@ -19,9 +19,12 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.adapters.schemas.function_schema import FunctionSchema
+
 from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
+    ToolsSchema,
 )
 from pipecat.services.kokoro.tts import KokoroTTSService
 from pipecat.services.ollama.llm import OLLamaLLMService
@@ -35,14 +38,17 @@ from virtual_assistant_be.core.protocol import (
     AnimationCmd,
     GoCommand,
     GoEvent,
+    HeardIndicator,
     ListenIndicator,
     StateUpdate,
     serialize,
 )
-from virtual_assistant_be.core.translations import translate as t
+from virtual_assistant_be.core.translations import lang_name, translate as t
 from virtual_assistant_be.services.camera_service import CameraService
 from virtual_assistant_be.services.command_service import CommandService
 from virtual_assistant_be.services.face_service import FaceService
+from virtual_assistant_be.services.llm_service import LlmService
+from virtual_assistant_be.services.mcp_service import MCPService
 from virtual_assistant_be.services.memory_service import MemoryService
 from virtual_assistant_be.services.personality_service import PersonalityService
 from virtual_assistant_be.services.rag_service import RagService
@@ -53,9 +59,14 @@ from virtual_assistant_be.pipecat.custom_frames import (
     PersonDisappearedFrame,
     TelegramMessageFrame,
 )
-from virtual_assistant_be.pipecat.godot_bridge_processor import GodotBridgeProcessor, SendFn
+from virtual_assistant_be.pipecat.godot_bridge_processor import (
+    GodotBridgeProcessor,
+    SendFn,
+    UserBridgeProcessor,
+)
 from virtual_assistant_be.pipecat.processors import (
     GestureProcessor,
+    IntentRouter,
     MemoryProcessor,
     PendingNameProcessor,
     PersonalityProcessor,
@@ -80,7 +91,9 @@ class PipecatOrchestrator:
             event_callback=self._on_camera_event,
             face_service=self.face_service,
         )
+        self.mcp = MCPService(settings.mcp_servers)
         self.telegram.set_message_callback(self._on_telegram_message)
+        self.llm_service = LlmService()
 
         self._pending_name: bool = False
         self._current_language: str = settings.piper_default_language
@@ -97,6 +110,11 @@ class PipecatOrchestrator:
         self._aiohttp_session: aiohttp.ClientSession | None = None
         self._name_retries: int = 0
         self._max_name_retries: int = 3
+        self._idle_task: asyncio.Task | None = None
+        self._idle_timeout: int = settings.idle_conversation_timeout
+        self._last_idle_initiate: float = 0.0
+        self._mcp_refresh_task: asyncio.Task | None = None
+
     def set_send_fn(self, send_fn: SendFn | None) -> None:
         self._send_fn = send_fn
 
@@ -119,12 +137,42 @@ class PipecatOrchestrator:
     def _lang(self, language: str | None = None) -> str:
         return language or self._current_language
 
-    async def _say(self, key: str, **fmt_args: str) -> str:
+    async def _say(self, key: str, rephrase: bool = True, **fmt_args: str) -> str:
         lang = self._lang()
         msg = t(key, lang, **fmt_args)
-        if self.personality.enabled:
+        if rephrase and self.personality.enabled:
             msg = await asyncio.to_thread(self.personality.personalize, msg, lang)
         return msg
+
+    def _build_system_prompt(self, language: str) -> str:
+        base = t("system_prompt", language, name=settings.assistant_name, style=settings.personality_style)
+        lang_instr = t("sys_respond_in", language, lang_name=lang_name(language))
+        return f"{base}\n\n{lang_instr}"
+
+    def _route_switch_language(self, lang: str) -> str | None:
+        if lang == self._current_language:
+            return None
+        old_lang = self._current_language
+        self._current_language = lang
+        if self._current_person_name:
+            self.face_service.set_language(self._current_person_name, lang)
+        msgs = self._context.messages if self._context else []
+        for i, msg in enumerate(msgs):
+            if msg.get("role") == "system":
+                msgs[i] = {"role": "system", "content": self._build_system_prompt(lang)}
+                break
+        log.info("Language switched from '%s' to '%s'", old_lang, lang)
+        return f"Language switched to {lang_name(lang)}."
+
+    def _route_change_personality(self, text: str) -> str | None:
+        trait = self.llm_service.extract_personality(text)
+        if not trait:
+            return None
+        self.personality.set_style(trait)
+        if self._current_person_name:
+            self.face_service.set_personality(self._current_person_name, trait)
+        log.info("Personality changed to '%s' for '%s'", trait, self._current_person_name)
+        return t("personality_changed", self._current_language, personality=trait)
 
     async def _create_pipeline(self) -> None:
         self._context = LLMContext()
@@ -207,6 +255,10 @@ class PipecatOrchestrator:
         llm = self._llm
         self._register_llm_tools(llm)
 
+        user_bridge = UserBridgeProcessor(
+            send_fn=self._send_fn,
+            on_user_interaction=self._reset_idle_timer,
+        )
         godot_bridge = GodotBridgeProcessor(send_fn=self._send_fn)
 
         user_agg, assistant_agg = LLMContextAggregatorPair(
@@ -235,19 +287,28 @@ class PipecatOrchestrator:
         pipeline = Pipeline([
             self._transport.input(),
             stt,
+            user_bridge,
             self._pending_name_processor,
+            IntentRouter(
+                llm_service=self.llm_service,
+                on_switch_language=self._route_switch_language,
+                on_change_personality=self._route_change_personality,
+            ),
             user_agg,
-            RAGProcessor(retrieve_fn=_retrieve_docs),
+            RAGProcessor(
+                retrieve_fn=_retrieve_docs,
+                language_fn=lambda: self._current_language,
+            ),
             llm,
             PersonalityProcessor(
                 personalize_fn=_personalize,
                 enabled=self.personality.enabled,
             ),
-            assistant_agg,
             self._memory_processor,
             godot_bridge,
             tts,
             GestureProcessor(),
+            assistant_agg,
             self._transport.output(),
         ])
 
@@ -267,42 +328,102 @@ class PipecatOrchestrator:
         )
 
     def _register_llm_tools(self, llm: OLLamaLLMService) -> None:
-        async def lights_handler(params):
-            result = await asyncio.to_thread(
-                self.commands.execute_lights,
-                params.args.get("action", "toggle"),
-            )
-            await params.result_callback(result)
+        pass
 
-        async def door_handler(params):
-            result = await asyncio.to_thread(
-                self.commands.execute_door,
-                params.args.get("action", "toggle"),
-            )
-            await params.result_callback(result)
+    async def _register_mcp_tools(self) -> None:
+        if not self._llm or not self._context:
+            return
+        llm = self._llm
+        tool_schemas: list[FunctionSchema] = []
 
-        async def send_message_handler(params):
-            result = await asyncio.to_thread(
-                self.commands.execute_send_message,
-                params.args.get("action", ""),
-                params.args.get("message", ""),
-                params.args.get("contact", ""),
-            )
-            await params.result_callback(result)
+        if self.mcp.enabled:
+            for full_name, description, properties, required in self.mcp.list_all_tools():
+                schema = FunctionSchema(
+                    name=full_name,
+                    description=description,
+                    properties=properties,
+                    required=required,
+                )
+                tool_schemas.append(schema)
+                handler = self._make_mcp_handler(full_name)
+                llm.register_function(full_name, handler)
 
-        async def home_assistant_handler(params):
-            result = await asyncio.to_thread(
-                self.commands.execute_home_assistant,
-                params.args.get("command", ""),
-            )
-            await params.result_callback(result)
+        if tool_schemas:
+            self._context.set_tools(ToolsSchema(standard_tools=tool_schemas))
 
-        llm.register_function("lights", lights_handler)
-        llm.register_function("door", door_handler)
-        llm.register_function("send_message", send_message_handler)
-        llm.register_function("home_assistant", home_assistant_handler)
+    def _make_mcp_handler(self, full_name: str):
+        async def handler(params):
+            result = await self.mcp.call_tool(full_name, params.arguments)
+            if result.isError:
+                text = "Error: " + (
+                    result.content[0].text if result.content else "Unknown error"
+                )
+            else:
+                text = result.content[0].text if result.content else ""
+            await params.result_callback(text)
+        return handler
+
+    def _build_mcp_context_text(self) -> str:
+        lines: list[str] = []
+        for conn in self.mcp._connections.values():
+            if not conn.tools:
+                continue
+            lines.append(f"[{conn.config.name}] Available tools:")
+            for tool in conn.tools:
+                desc = (tool.description or "").strip()
+                params = list((tool.inputSchema or {}).get("properties", {}).keys())
+                param_str = f" ({', '.join(params)})" if params else ""
+                lines.append(f"  - {tool.name}{param_str}: {desc}")
+        return "\n".join(lines)
+
+    async def _refresh_mcp_live_context(self) -> str | None:
+        if not self.mcp._tool_map:
+            return None
+        try:
+            result = await self.mcp.call_tool("home-assistant_GetLiveContext", {})
+            if result.isError:
+                return None
+            text = result.content[0].text if result.content else ""
+            if text:
+                return "Current device states:\n" + text
+        except (KeyError, ValueError, Exception) as e:
+            log.debug("GetLiveContext not available: %s", e)
+        return None
+
+    async def _inject_mcp_context(self) -> None:
+        if not self._context or not self.mcp._tool_map:
+            return
+        parts: list[str] = []
+        caps = self._build_mcp_context_text()
+        if caps:
+            parts.append(caps)
+        live = await self._refresh_mcp_live_context()
+        if live:
+            parts.append(live)
+        if not parts:
+            return
+        text = "\n\n".join(parts)
+        msgs = self._context.messages
+        idx = next((i for i, m in enumerate(msgs) if isinstance(m, dict) and m.get("role") == "system" and m.get("content", "").startswith("[MCP]")), None)
+        msg = {"role": "system", "content": f"[MCP]\n{text}"}
+        if idx is not None:
+            msgs[idx] = msg
+        else:
+            msgs.insert(1, msg)
+
+    async def _start_mcp_refresh_task(self) -> None:
+        await self._inject_mcp_context()
+        try:
+            while True:
+                await asyncio.sleep(300)
+                await self._inject_mcp_context()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            log.exception("MCP refresh failed")
 
     async def _inject_user_text(self, text: str, language: str | None = None) -> None:
+        await self._send_msg(serialize(HeardIndicator(text=text)))
         self._context.add_message({
             "role": "user",
             "content": text,
@@ -310,13 +431,12 @@ class PipecatOrchestrator:
         await self._pipeline_task.queue_frames([
             LLMRunFrame(),
         ])
+        self._reset_idle_timer()
 
     async def start(self) -> None:
         await self._create_pipeline()
 
-        initial_prompt = t("system_prompt", "es", name=settings.assistant_name)
-
-        self._context.add_message({"role": "system", "content": initial_prompt})
+        self._context.add_message({"role": "system", "content": self._build_system_prompt(self._current_language)})
         self._context.add_message({
             "role": "assistant",
             "content": t("hello_name", self._lang(), name="") or "Hello!",
@@ -329,6 +449,10 @@ class PipecatOrchestrator:
         await asyncio.sleep(0.1)
 
     async def stop(self) -> None:
+        self._cancel_idle_timer()
+        if self._mcp_refresh_task:
+            self._mcp_refresh_task.cancel()
+            self._mcp_refresh_task = None
         if self._pipeline_task:
             await self._pipeline_task.queue_frame(EndFrame())
             self._pipeline_task = None
@@ -352,20 +476,47 @@ class PipecatOrchestrator:
                 await self._on_ready()
             case "shutdown":
                 await self._on_shutdown()
+            case "clear_data":
+                await self._on_clear_data()
 
     async def _on_ready(self) -> None:
         await self._send_state(connected=True)
         self.camera.start(asyncio.get_running_loop())
         await asyncio.to_thread(self.telegram.start_polling)
+        await self.mcp.start()
+        await self._register_mcp_tools()
+        self._mcp_refresh_task = asyncio.ensure_future(self._start_mcp_refresh_task())
 
     async def _on_shutdown(self) -> None:
         log.info("Shutting down")
         await self._cleanup()
         await self._send_state(connected=False)
 
+    async def _on_clear_data(self) -> None:
+        log.info("Clearing all data")
+        await asyncio.to_thread(self.memory.clear_all)
+        await asyncio.to_thread(self.face_service.clear_all)
+        if self._context:
+            self._context = LLMContext()
+            self._context.add_message({"role": "system", "content": self._build_system_prompt(self._current_language)})
+            self._context.add_message({
+                "role": "assistant",
+                "content": t("hello_name", self._lang(), name="") or "Hello!",
+            })
+            if self._pipeline_task and self.mcp.enabled:
+                await self._register_mcp_tools()
+        self._pending_name = False
+        self._current_person_name = None
+        self._current_language = settings.piper_default_language
+        self._name_retries = 0
+        self._cancel_idle_timer()
+        await self._send_state(connected=True, data_cleared=True)
+        log.info("All data cleared")
+
     async def _cleanup(self) -> None:
         self.camera.stop()
         await asyncio.to_thread(self.telegram.stop_polling)
+        await self.mcp.stop()
 
     async def _on_camera_event(self, event: str, data: dict) -> None:
         match event:
@@ -403,6 +554,7 @@ class PipecatOrchestrator:
                 await self._pipeline_task.queue_frames([
                     PersonAppearedFrame(person_name=name),
                 ])
+            self._reset_idle_timer()
         else:
             greeting = await self._say("hello_unknown")
             await self._send_animation("greet")
@@ -418,6 +570,7 @@ class PipecatOrchestrator:
 
     async def _on_person_disappeared(self) -> None:
         await asyncio.to_thread(self.memory.store_person_event, "disappeared")
+        self._cancel_idle_timer()
         self._current_person_name = None
         self.personality.reset_style()
         if self._pipeline_task:
@@ -443,18 +596,21 @@ class PipecatOrchestrator:
             "fist": ("surprised", "gesture_fist"),
         }
 
-        if gesture == "open_palm":
+        if gesture in ("open_palm", "point"):
             if self._pipeline_task:
+                msg = await self._say("gesture_interrupt", rephrase=False)
                 await self._pipeline_task.queue_frames([
                     GestureFrame(gesture="open_palm"),
+                    TTSSpeakFrame(text=msg),
                 ])
             return
 
         if gesture in gesture_actions:
             anim, phrase_key = gesture_actions[gesture]
             await self._send_animation(anim)
-            msg = await self._say(phrase_key)
+            msg = await self._say(phrase_key, rephrase=False)
             await self._speak_text(msg)
+            self._reset_idle_timer()
 
     async def _on_telegram_message(self, sender: str, text: str, chat_id: int) -> None:
         log.info("Telegram from %s: %s", sender, text)
@@ -526,3 +682,36 @@ class PipecatOrchestrator:
 
     async def _send_listen(self, active: bool) -> None:
         await self._send_msg(serialize(ListenIndicator(active=active)))
+
+    # ── Proactive conversation (idle timer) ──────────────────────────
+
+    def _reset_idle_timer(self) -> None:
+        self._cancel_idle_timer()
+        if not self._current_person_name:
+            return
+        cfg = self.face_service.get_conversation_config(self._current_person_name)
+        if not cfg.get("initiate", False):
+            return
+        timeout = cfg.get("idle_timeout") or self._idle_timeout
+        if timeout <= 0:
+            return
+
+        async def _wait_and_initiate():
+            try:
+                await asyncio.sleep(timeout)
+                # Enforce a minimum gap between proactive initiations
+                if time.monotonic() - self._last_idle_initiate < timeout * 2:
+                    return
+                if self._pipeline_task and self._current_person_name:
+                    self._last_idle_initiate = time.monotonic()
+                    prompt = t("idle_initiate", self._current_language)
+                    await self._inject_user_text(prompt)
+            except asyncio.CancelledError:
+                pass
+
+        self._idle_task = asyncio.create_task(_wait_and_initiate())
+
+    def _cancel_idle_timer(self) -> None:
+        if self._idle_task:
+            self._idle_task.cancel()
+            self._idle_task = None

@@ -161,37 +161,73 @@ class TestFaceServicePhoto:
 
 class TestFaceServicePersonality:
     def test_set_and_get_personality(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_personality_set_get.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_PERSONALITY_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._personalities = {}
-            svc.set_personality("Alice", "cheerful")
-            assert svc.get_personality("Alice") == "cheerful"
-        finally:
-            svc._app = None
+            try:
+                svc._personalities = {}
+                svc.set_personality("Alice", "cheerful")
+                assert svc.get_personality("Alice") == "cheerful"
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_get_personality_unknown_returns_none(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_personality_unknown.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_PERSONALITY_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._personalities = {}
-            assert svc.get_personality("Unknown") is None
-        finally:
-            svc._app = None
+            try:
+                svc._personalities = {}
+                assert svc.get_personality("Unknown") is None
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_set_personality_overwrites(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_personality_overwrite.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_PERSONALITY_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._personalities = {}
-            svc.set_personality("Bob", "formal")
-            svc.set_personality("Bob", "cheerful")
-            assert svc.get_personality("Bob") == "cheerful"
-        finally:
-            svc._app = None
+            try:
+                svc._personalities = {}
+                svc.set_personality("Bob", "formal")
+                svc.set_personality("Bob", "cheerful")
+                assert svc.get_personality("Bob") == "cheerful"
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_personalities_persist_to_disk(self):
         import tempfile
@@ -216,45 +252,81 @@ class TestFaceServicePersonality:
                     svc2._app = None
             finally:
                 svc._app = None
-                try:
-                    os_module.remove(test_file)
-                except OSError:
-                    pass
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
 
 class TestFaceServiceLanguage:
     def test_set_and_get_language(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_language_set_get.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_LANGUAGE_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._languages = {}
-            svc.set_language("Alice", "es")
-            assert svc.get_language("Alice") == "es"
-        finally:
-            svc._app = None
+            try:
+                svc._languages = {}
+                svc.set_language("Alice", "es")
+                assert svc.get_language("Alice") == "es"
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_get_language_unknown_returns_none(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_language_unknown.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_LANGUAGE_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._languages = {}
-            assert svc.get_language("Unknown") is None
-        finally:
-            svc._app = None
+            try:
+                svc._languages = {}
+                assert svc.get_language("Unknown") is None
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_set_language_overwrites(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_language_overwrite.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_LANGUAGE_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._languages = {}
-            svc.set_language("Bob", "en")
-            svc.set_language("Bob", "es")
-            assert svc.get_language("Bob") == "es"
-        finally:
-            svc._app = None
+            try:
+                svc._languages = {}
+                svc.set_language("Bob", "en")
+                svc.set_language("Bob", "es")
+                assert svc.get_language("Bob") == "es"
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_languages_persist_to_disk(self):
         import tempfile

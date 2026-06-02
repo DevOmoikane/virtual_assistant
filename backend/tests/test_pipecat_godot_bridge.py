@@ -9,6 +9,8 @@ from pipecat.frames.frames import (
     LLMTextFrame,
     TranscriptionFrame,
     TTSSpeakFrame,
+    UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
 
@@ -17,7 +19,18 @@ from virtual_assistant_be.pipecat.custom_frames import (
     PersonAppearedFrame,
     PersonDisappearedFrame,
 )
-from virtual_assistant_be.pipecat.godot_bridge_processor import GodotBridgeProcessor
+from virtual_assistant_be.pipecat.godot_bridge_processor import (
+    GodotBridgeProcessor,
+    UserBridgeProcessor,
+)
+
+
+@pytest.fixture
+def user_bridge():
+    send_fn = MagicMock()
+    bp = UserBridgeProcessor(send_fn=send_fn)
+    bp._started = True
+    return bp
 
 
 @pytest.fixture
@@ -29,15 +42,41 @@ def bridge():
 
 
 @pytest.mark.asyncio
-class TestGodotBridgeProcessor:
-    async def test_transcription_frame_sends_heard(self, bridge):
+class TestUserBridgeProcessor:
+    async def test_transcription_frame_sends_heard(self, user_bridge):
         frame = TranscriptionFrame(text="hello", user_id="user", timestamp="0")
-        await bridge.process_frame(frame, FrameDirection.DOWNSTREAM)
-        bridge._send_fn.assert_called_once()
-        data = bridge._send_fn.call_args[0][0]
+        await user_bridge.process_frame(frame, FrameDirection.DOWNSTREAM)
+        user_bridge._send_fn.assert_called_once()
+        data = user_bridge._send_fn.call_args[0][0]
         assert data["type"] == "heard"
         assert data["text"] == "hello"
 
+    async def test_user_started_speaking_sends_listen_true(self, user_bridge):
+        frame = UserStartedSpeakingFrame()
+        await user_bridge.process_frame(frame, FrameDirection.DOWNSTREAM)
+        user_bridge._send_fn.assert_called_once()
+        data = user_bridge._send_fn.call_args[0][0]
+        assert data["type"] == "listen"
+        assert data["active"] is True
+
+    async def test_user_stopped_speaking_sends_listen_false(self, user_bridge):
+        frame = UserStoppedSpeakingFrame()
+        await user_bridge.process_frame(frame, FrameDirection.DOWNSTREAM)
+        user_bridge._send_fn.assert_called_once()
+        data = user_bridge._send_fn.call_args[0][0]
+        assert data["type"] == "listen"
+        assert data["active"] is False
+
+    async def test_unknown_frame_passed_through(self, user_bridge):
+        frame = LLMFullResponseEndFrame()
+        push_mock = AsyncMock()
+        user_bridge.push_frame = push_mock
+        await user_bridge.process_frame(frame, FrameDirection.DOWNSTREAM)
+        push_mock.assert_awaited_once_with(frame, FrameDirection.DOWNSTREAM)
+
+
+@pytest.mark.asyncio
+class TestGodotBridgeProcessor:
     async def test_llm_text_frame_sends_speak(self, bridge):
         frame = LLMTextFrame(text="Hello world")
         await bridge.process_frame(frame, FrameDirection.DOWNSTREAM)

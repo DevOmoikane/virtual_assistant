@@ -21,9 +21,21 @@ def _expand(val: str) -> str:
 
 
 @dataclass
+class MCPServerConfig:
+    name: str = ""
+    transport: str = "stdio"
+    command: str = ""
+    args: tuple[str, ...] = ()
+    env: dict[str, str] | None = None
+    url: str = ""
+
+
+@dataclass
 class Settings:
     host: str = "0.0.0.0"
     port: int = 7700
+
+    mcp_servers: tuple[MCPServerConfig, ...] = ()
 
     ollama_url: str = "http://localhost:11434"
     ollama_gen_model: str = "llama3.1"
@@ -65,6 +77,7 @@ class Settings:
     personality_enabled: bool = False
     personality_style: str = "friendly and courteous"
     assistant_name: str = "Virtual Assistant"
+    idle_conversation_timeout: int = 60
 
     def _apply_yaml(self, cfg: dict) -> None:
         self.host = cfg.get("host", self.host)
@@ -133,10 +146,25 @@ class Settings:
         self.telegram_enabled = telegram.get("enabled", self.telegram_enabled)
         self.telegram_bot_token = telegram.get("bot_token", self.telegram_bot_token)
 
+        mcp_cfg = cfg.get("mcp", {})
+        servers = mcp_cfg.get("servers", [])
+        self.mcp_servers = tuple(
+            MCPServerConfig(
+                name=s.get("name", ""),
+                transport=s.get("transport", "stdio"),
+                command=s.get("command", ""),
+                args=tuple(s.get("args", [])),
+                env=s.get("env"),
+                url=s.get("url", ""),
+            )
+            for s in servers
+        )
+
         personality = cfg.get("personality", {})
         self.personality_enabled = personality.get("enabled", self.personality_enabled)
         self.personality_style = personality.get("style", self.personality_style)
         self.assistant_name = personality.get("name", self.assistant_name)
+        self.idle_conversation_timeout = personality.get("idle_conversation_timeout", self.idle_conversation_timeout)
 
     def _apply_env(self) -> None:
         env_map = {

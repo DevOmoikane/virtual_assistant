@@ -49,8 +49,6 @@ C = {
     "clear_screen": "\033[2J\033[H",
     "hide_cursor": "\033[?25l",
     "show_cursor": "\033[?25h",
-    "save_cursor": "\033[s",
-    "restore_cursor": "\033[u",
 }
 
 # ── State ─────────────────────────────────────────────────
@@ -140,11 +138,9 @@ def _log(msg: str) -> None:
 def _redraw() -> None:
     cols, rows = _term_size()
     out = _render(cols, rows)
-    sys.stdout.write(C["save_cursor"])
     sys.stdout.write(C["clear_screen"])
     sys.stdout.write(out)
     sys.stdout.write(f"\n{C['bold']}> {C['reset']}")
-    sys.stdout.write(C["restore_cursor"])
     sys.stdout.flush()
 
 
@@ -264,9 +260,9 @@ async def main() -> None:
     try:
         cols, _ = _term_size()
         sys.stdout.write(C["clear_screen"])
-        sys.stdout.write(f"{C['bold']}Godot Simulator{C['reset']}\n")
-        sys.stdout.write(f"{C['dim']}connecting to {WS_URL} ...{C['reset']}\n")
         sys.stdout.flush()
+
+        _redraw()
 
         try:
             async with websockets.connect(WS_URL) as ws:
