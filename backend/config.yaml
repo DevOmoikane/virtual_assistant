@@ -1,3 +1,28 @@
+mcp:
+  # Example configuration:
+  # servers:
+  #   - name: filesystem
+  #     transport: stdio
+  #     command: npx
+  #     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+  #     env:
+  #       NODE_OPTIONS: "--max-old-space-size=4096"
+  #   - name: weather
+  #     transport: sse
+  #     url: "http://localhost:8000/mcp"
+  servers:
+    - name: home-assistant
+      command: mcp-proxy
+      args: ["--transport=streamablehttp", "--stateless", "http://172.30.1.21:8123/api/mcp"]
+      env:
+        API_ACCESS_TOKEN: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI0OGY4YWQ5NmUwNjY0YjkyODY4YjAwNjJiODZjMzI1MyIsImlhdCI6MTc4MDA5NzU5OSwiZXhwIjoyMDk1NDU3NTk5fQ.PvWTs7V1l8rPYIEYW0km6poCBTexwz3s1j598hWcgec"
+
+platform:
+  camera: auto  # auto, usb, rpi
+  audio:
+    input_device: null  # null=auto, or device name substring like "wm8960"
+    output_device: null
+
 camera:
   device_id: null
   height: 480
@@ -6,9 +31,6 @@ chroma:
   collection: rag_docs
   url: http://localhost:8100
 host: 0.0.0.0
-mcp:
-  godot_server_url: http://10.73.19.117:7801/sse
-  tts_server_url: http://10.73.19.117:7800/sse
 mediapipe:
   models_dir: null
 ollama:
@@ -22,6 +44,7 @@ opensearch:
 personality:
   enabled: true
   style: friendly and courteous
+  name: Carlitos
 piper:
   default_language: es
   voices:
@@ -31,10 +54,12 @@ piper:
 port: 7700
 rag:
   enabled: true
+  engine: opensearch
 stt:
+  engine: faster_whisper
   chunk_duration: 3.0
   device_id: null
-  model_size: base
+  model_size: large-v3 # small, base, large-v3
   sample_rate: 16000
   vad_bypass: false
 supertonic:

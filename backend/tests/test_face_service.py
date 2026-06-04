@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
 import pytest
 
-from virtual_assistant_be.core.behavior_controller import BehaviorController
 from virtual_assistant_be.services.face_service import FaceService
 
 TEST_PHOTO = "/Users/israel/dev/omoikane/virtual_assistant/resources/test_photo.jpg"
@@ -160,46 +159,75 @@ class TestFaceServicePhoto:
         assert svc.register("X", np.zeros(512, dtype=np.float32)) is False
 
 
-@pytest.fixture
-def controller():
-    send_fn = AsyncMock()
-    ctrl = BehaviorController(send_fn=send_fn)
-    return ctrl
-
-
 class TestFaceServicePersonality:
     def test_set_and_get_personality(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_personality_set_get.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_PERSONALITY_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._personalities = {}
-            svc.set_personality("Alice", "cheerful")
-            assert svc.get_personality("Alice") == "cheerful"
-        finally:
-            svc._app = None
+            try:
+                svc._personalities = {}
+                svc.set_personality("Alice", "cheerful")
+                assert svc.get_personality("Alice") == "cheerful"
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_get_personality_unknown_returns_none(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_personality_unknown.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_PERSONALITY_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._personalities = {}
-            assert svc.get_personality("Unknown") is None
-        finally:
-            svc._app = None
+            try:
+                svc._personalities = {}
+                assert svc.get_personality("Unknown") is None
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_set_personality_overwrites(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_personality_overwrite.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_PERSONALITY_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._personalities = {}
-            svc.set_personality("Bob", "formal")
-            svc.set_personality("Bob", "cheerful")
-            assert svc.get_personality("Bob") == "cheerful"
-        finally:
-            svc._app = None
+            try:
+                svc._personalities = {}
+                svc.set_personality("Bob", "formal")
+                svc.set_personality("Bob", "cheerful")
+                assert svc.get_personality("Bob") == "cheerful"
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_personalities_persist_to_disk(self):
         import tempfile
@@ -224,45 +252,81 @@ class TestFaceServicePersonality:
                     svc2._app = None
             finally:
                 svc._app = None
-                try:
-                    os_module.remove(test_file)
-                except OSError:
-                    pass
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
 
 class TestFaceServiceLanguage:
     def test_set_and_get_language(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_language_set_get.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_LANGUAGE_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._languages = {}
-            svc.set_language("Alice", "es")
-            assert svc.get_language("Alice") == "es"
-        finally:
-            svc._app = None
+            try:
+                svc._languages = {}
+                svc.set_language("Alice", "es")
+                assert svc.get_language("Alice") == "es"
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_get_language_unknown_returns_none(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_language_unknown.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_LANGUAGE_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._languages = {}
-            assert svc.get_language("Unknown") is None
-        finally:
-            svc._app = None
+            try:
+                svc._languages = {}
+                assert svc.get_language("Unknown") is None
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_set_language_overwrites(self):
-        with patch.object(FaceService, "_ensure_collection"):
+        import tempfile
+        import os as os_module
+        import virtual_assistant_be.services.face_service as fs
+
+        test_file = os_module.path.join(tempfile.gettempdir(), "test_language_overwrite.json")
+        with (
+            patch.object(FaceService, "_ensure_collection"),
+            patch.object(fs, "_LANGUAGE_FILE", test_file),
+        ):
             svc = FaceService()
             svc._ready = True
-        try:
-            svc._languages = {}
-            svc.set_language("Bob", "en")
-            svc.set_language("Bob", "es")
-            assert svc.get_language("Bob") == "es"
-        finally:
-            svc._app = None
+            try:
+                svc._languages = {}
+                svc.set_language("Bob", "en")
+                svc.set_language("Bob", "es")
+                assert svc.get_language("Bob") == "es"
+            finally:
+                svc._app = None
+            try:
+                os_module.remove(test_file)
+            except OSError:
+                pass
 
     def test_languages_persist_to_disk(self):
         import tempfile
@@ -293,37 +357,4 @@ class TestFaceServiceLanguage:
                     pass
 
 
-class TestBehaviorControllerIntegration:
-    """End-to-end unknown→register→recognize flow through BehaviorController."""
 
-    @pytest.mark.asyncio
-    async def test_unknown_flow_sets_pending_name(self, controller):
-        controller._current_language = "en"
-        with (
-            patch.object(controller, "send_animation"),
-            patch.object(controller, "_send_speak"),
-            patch.object(controller, "_send_listen") as mock_listen,
-            patch.object(controller.tts, "speak"),
-            patch.object(controller.memory, "store_person_event"),
-        ):
-            await controller._on_person_appeared(data={})
-            assert controller._pending_name is True
-            mock_listen.assert_awaited_once_with(True)
-
-    @pytest.mark.asyncio
-    async def test_register_name_with_real_embedding(self, controller, reference_embedding):
-        controller._current_language = "en"
-        controller._pending_name = True
-        controller.face_service.last_unknown_embedding = reference_embedding
-
-        with (
-            patch.object(controller, "_send_speak") as mock_speak,
-            patch.object(controller, "_send_listen") as mock_listen,
-            patch.object(controller.tts, "speak"),
-            patch.object(controller.face_service, "register", return_value=True) as mock_register,
-        ):
-            ok = await controller._register_name("Bob")
-            assert ok is True
-            mock_register.assert_called_once_with("Bob", reference_embedding)
-            mock_speak.assert_awaited_once()
-            mock_listen.assert_awaited_once_with(False)

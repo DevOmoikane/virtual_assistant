@@ -1,0 +1,29 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, rpi5]
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 1
+
+      - name: Pull latest
+        run: git pull origin main
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Restart service
+        run: sudo systemctl restart virtual-assistant

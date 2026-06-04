@@ -21,9 +21,21 @@ def _expand(val: str) -> str:
 
 
 @dataclass
+class MCPServerConfig:
+    name: str = ""
+    transport: str = "stdio"
+    command: str = ""
+    args: tuple[str, ...] = ()
+    env: dict[str, str] | None = None
+    url: str = ""
+
+
+@dataclass
 class Settings:
     host: str = "0.0.0.0"
     port: int = 7700
+
+    mcp_servers: tuple[MCPServerConfig, ...] = ()
 
     ollama_url: str = "http://localhost:11434"
     ollama_gen_model: str = "llama3.1"
@@ -36,6 +48,7 @@ class Settings:
     opensearch_port: int = 9200
     opensearch_index: str = "documents"
 
+    stt_engine: str = "faster_whisper"
     stt_model_size: str = "base"
     stt_sample_rate: int = 16000
     stt_chunk_duration: float = 3.0
@@ -48,6 +61,10 @@ class Settings:
     piper_default_language: str = "en"
     piper_voices: dict[str, str] | None = None
 
+    platform_camera: str = "auto"
+    platform_audio_input: str | None = None
+    platform_audio_output: str | None = None
+
     camera_device_id: int | None = None
     camera_width: int = 640
     camera_height: int = 480
@@ -57,14 +74,14 @@ class Settings:
     gesture_recognition_model: str = ""
 
     rag_enabled: bool = True
+    rag_engine: str = "opensearch"
     telegram_enabled: bool = True
     telegram_bot_token: str = ""
 
-    mcp_tts_server_url: str = "http://localhost:7800/sse"
-    mcp_godot_server_url: str = "http://localhost:7801/sse"
-
     personality_enabled: bool = False
     personality_style: str = "friendly and courteous"
+    assistant_name: str = "Virtual Assistant"
+    idle_conversation_timeout: int = 60
 
     def _apply_yaml(self, cfg: dict) -> None:
         self.host = cfg.get("host", self.host)
@@ -85,6 +102,7 @@ class Settings:
         self.opensearch_index = os_cfg.get("index", self.opensearch_index)
 
         stt = cfg.get("stt", {})
+        self.stt_engine = stt.get("engine", self.stt_engine)
         self.stt_model_size = stt.get("model_size", self.stt_model_size)
         self.stt_sample_rate = stt.get("sample_rate", self.stt_sample_rate)
         self.stt_chunk_duration = stt.get("chunk_duration", self.stt_chunk_duration)
@@ -109,6 +127,12 @@ class Settings:
                 "en": os.path.expanduser("./tools/piper/en_US-lessac-medium.onnx"),
             }
 
+        platform = cfg.get("platform", {})
+        self.platform_camera = platform.get("camera", self.platform_camera)
+        audio_cfg = platform.get("audio", {})
+        self.platform_audio_input = audio_cfg.get("input_device", self.platform_audio_input)
+        self.platform_audio_output = audio_cfg.get("output_device", self.platform_audio_output)
+
         camera = cfg.get("camera", {})
         self.camera_device_id = camera.get("device_id", self.camera_device_id)
         self.camera_width = camera.get("width", self.camera_width)
@@ -126,18 +150,31 @@ class Settings:
 
         rag_cfg = cfg.get("rag", {})
         self.rag_enabled = rag_cfg.get("enabled", self.rag_enabled)
+        self.rag_engine = rag_cfg.get("engine", self.rag_engine)
 
         telegram = cfg.get("telegram", {})
         self.telegram_enabled = telegram.get("enabled", self.telegram_enabled)
         self.telegram_bot_token = telegram.get("bot_token", self.telegram_bot_token)
 
         mcp_cfg = cfg.get("mcp", {})
-        self.mcp_tts_server_url = mcp_cfg.get("tts_server_url", self.mcp_tts_server_url)
-        self.mcp_godot_server_url = mcp_cfg.get("godot_server_url", self.mcp_godot_server_url)
+        servers = mcp_cfg.get("servers", [])
+        self.mcp_servers = tuple(
+            MCPServerConfig(
+                name=s.get("name", ""),
+                transport=s.get("transport", "stdio"),
+                command=s.get("command", ""),
+                args=tuple(s.get("args", [])),
+                env=s.get("env"),
+                url=s.get("url", ""),
+            )
+            for s in servers
+        )
 
         personality = cfg.get("personality", {})
         self.personality_enabled = personality.get("enabled", self.personality_enabled)
         self.personality_style = personality.get("style", self.personality_style)
+        self.assistant_name = personality.get("name", self.assistant_name)
+        self.idle_conversation_timeout = personality.get("idle_conversation_timeout", self.idle_conversation_timeout)
 
     def _apply_env(self) -> None:
         env_map = {

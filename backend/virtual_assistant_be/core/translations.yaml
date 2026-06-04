@@ -4,17 +4,26 @@ en:
   hello_unknown: "Hello there! What's your name?"
   gesture_wave: "I see you waving!"
   gesture_thumbs_up: "Got it!"
+  gesture_point: "I see you pointing!"
+  gesture_fist: "Oh, a strong pose!"
+  gesture_open_palm: "Go ahead, I'm listening."
+  gesture_interrupt: "Yes, please tell me..."
   register_success: "Nice to meet you, {name}!"
   register_failure: "Sorry, I couldn't save your name."
   telegram_message: "Message from {sender} on Telegram: {text}"
   personality_changed: "Got it! I'll be {personality} from now on."
   personality_need_face: "I need to see your face to remember that preference."
+  idle_initiate: "The person in front of you hasn't spoken in a while. Proactively start a natural, friendly conversation with them. Ask them how they are doing or make a casual comment about something they might be interested in."
+
+  # RAG
+  rag_trigger: "I want to know information about "
 
   # System prompts
-  sys_respond_in: "Respond in {lang_name}."
-  sys_you_are: "You are a {style} virtual assistant."
+  sys_respond_in: "The user's default language is {lang_name}, but always respond in whatever language the user is actually speaking. Do NOT call switch_language unless the user explicitly asks to change languages — just match their language naturally."
+  sys_you_are: "You are {name}, a {style} virtual assistant. Your name is {name}."
   sys_rephrase: "Rephrase the following message to match your personality. Keep the exact same meaning. Keep all named entities and numbers exactly as they are. Respond only in {lang_name}. Respond with ONLY the rephrased message, no quotes, no explanation, no extra text."
   sys_translate_to: "Translate the following personality trait to {lang_name}. Reply with ONLY the translation, no explanation, no quotes."
+  system_prompt: "You are {name}, a helpful {style} virtual assistant. Your name is {name}, NOT the user's name. Never address the user by your own name. Keep responses VERY short — one or two sentences max. Be concise, friendly, and natural."
 
 es:
   greeting_ready: "¡Hola! Estoy listo para ayudar."
@@ -22,14 +31,23 @@ es:
   hello_unknown: "¡Hola! ¿Cómo te llamas?"
   gesture_wave: "¡Te veo saludando!"
   gesture_thumbs_up: "¡Entendido!"
+  gesture_point: "¡Te veo señalando!"
+  gesture_fist: "¡Vaya, qué postura más fuerte!"
+  gesture_open_palm: "Adelante, te escucho."
+  gesture_interrupt: "Sí, dime..."
   register_success: "¡Mucho gusto, {name}!"
   register_failure: "Lo siento, no pude guardar tu nombre."
   telegram_message: "Mensaje de {sender} en Telegram: {text}"
   personality_changed: "¡Entendido! A partir de ahora seré {personality}."
   personality_need_face: "Necesito ver tu cara para recordar esa preferencia."
+  idle_initiate: "La persona frente a ti no ha hablado en un rato. Inicia proactivamente una conversación natural y amigable con ella. Pregúntale cómo está o haz un comentario casual sobre algo que pueda interesarle."
+
+  # RAG
+  rag_trigger: "Quiero saber información sobre "
 
   # System prompts
-  sys_respond_in: "Responde en {lang_name}."
-  sys_you_are: "Eres un asistente virtual {style}."
+  sys_respond_in: "El idioma predeterminado del usuario es {lang_name}, pero responde siempre en el idioma que el usuario esté hablando. NO llames a switch_language a menos que el usuario pida explícitamente cambiar de idioma — solo adáptate al idioma que usa."
+  sys_you_are: "Eres {name}, un asistente virtual {style}. Tu nombre es {name}."
   sys_rephrase: "Reformula el siguiente mensaje para que coincida con tu personalidad. Mantén el mismo significado exacto. Mantén todas las entidades nombradas y números exactamente como están. Responde únicamente en {lang_name}. Responde SOLO con el mensaje reformulado, sin comillas, sin explicación, sin texto adicional."
   sys_translate_to: "Traduce el siguiente rasgo de personalidad a {lang_name}. Responde SOLO con la traducción, sin explicación, sin comillas."
+  system_prompt: "Eres {name}, un asistente virtual {style} y servicial. Tu nombre es {name}, NO el nombre del usuario. Nunca te dirijas al usuario por tu propio nombre. Mantén las respuestas MUY cortas — máximo una o dos frases. Sé conciso, amigable y natural."

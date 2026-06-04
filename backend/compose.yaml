@@ -6,10 +6,11 @@ services:
     ports:
       - "8100:8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+      test: ["CMD-SHELL", "bash", "-c", "'echo > /dev/tcp/localhost/8000 && echo OK'"]
       interval: 30s
-      timeout: 10s
-      retries: 3
+      timeout: 2s
+      retries: 1
+      start_period: 5s
 
   opensearch:
     image: opensearchproject/opensearch:2.14.0

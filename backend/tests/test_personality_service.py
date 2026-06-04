@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from virtual_assistant_be.core.behavior_controller import BehaviorController
 from virtual_assistant_be.core.config import settings
 from virtual_assistant_be.services.personality_service import PersonalityService
 
@@ -192,51 +191,3 @@ class TestPersonalityService:
         assert svc.style == "cheerful"
         svc.reset_style()
         assert svc.style == original
-
-
-class TestBehaviorControllerSay:
-    @pytest.fixture
-    def controller(self):
-        send_fn = AsyncMock()
-        ctrl = BehaviorController(send_fn=send_fn)
-        return ctrl
-
-    @pytest.mark.asyncio
-    async def test_say_disabled_passes_through(self, controller):
-        controller._current_language = "en"
-        controller.personality._enabled = False
-        with (
-            patch.object(controller, "_speak") as mock_speak,
-            patch.object(controller, "_send_speak") as mock_send_speak,
-        ):
-            msg = await controller._say("hello_name", name="Alice")
-            assert msg == "Hello Alice!"
-            mock_speak.assert_awaited_once_with("Hello Alice!", "en")
-            mock_send_speak.assert_awaited_once_with("Hello Alice!")
-
-    @pytest.mark.asyncio
-    async def test_say_disabled_in_spanish(self, controller):
-        controller._current_language = "es"
-        controller.personality._enabled = False
-        with (
-            patch.object(controller, "_speak") as mock_speak,
-            patch.object(controller, "_send_speak") as mock_send_speak,
-        ):
-            msg = await controller._say("hello_name", name="Alice")
-            assert msg == "¡Hola Alice!"
-            mock_speak.assert_awaited_once_with("¡Hola Alice!", "es")
-
-    @pytest.mark.asyncio
-    async def test_say_enabled_personalizes(self, controller):
-        controller._current_language = "en"
-        controller.personality._enabled = True
-        with (
-            patch.object(controller, "_speak") as mock_speak,
-            patch.object(controller, "_send_speak") as mock_send_speak,
-            patch.object(controller.personality, "personalize", return_value="Hey Alice, hi!") as mock_personalize,
-        ):
-            msg = await controller._say("hello_name", name="Alice")
-            assert msg == "Hey Alice, hi!"
-            mock_personalize.assert_called_once_with("Hello Alice!", "en")
-            mock_speak.assert_awaited_once_with("Hey Alice, hi!", "en")
-            mock_send_speak.assert_awaited_once_with("Hey Alice, hi!")

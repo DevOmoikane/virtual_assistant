@@ -27,6 +27,13 @@ try:
 except ImportError:
     _HAS_MEDIAPIPE = False
 
+try:
+    from picamera2 import Picamera2
+
+    _HAS_PICAMERA = True
+except ImportError:
+    _HAS_PICAMERA = False
+
 log = logging.getLogger(__name__)
 
 EventCallback = Callable[[str, dict], Awaitable[None]]
@@ -104,11 +111,24 @@ class CameraService:
 
         self._camera_idx = 0
         self._audio_device_id: int | None = None
+        self._camera_type = self._detect_camera_type()
         self._probe_devices()
 
     @property
     def audio_device_id(self) -> int | None:
         return self._audio_device_id
+
+    @staticmethod
+    def _detect_camera_type() -> str:
+        cfg = settings.platform_camera
+        if cfg == "rpi":
+            return "rpi"
+        if cfg == "usb":
+            return "usb"
+        if _HAS_PICAMERA:
+            log.info("Detected Raspberry Pi camera (picamera2)")
+            return "rpi"
+        return "usb"
 
     def _probe_devices(self) -> None:
         self._camera_idx, cam_name = self._find_camera()
@@ -151,7 +171,13 @@ class CameraService:
         if self._thread:
             self._thread.join(timeout=3)
         if self._cap:
-            self._cap.release()
+            if self._camera_type == "rpi" and _HAS_PICAMERA:
+                try:
+                    self._cap.stop()
+                except Exception:
+                    pass
+            else:
+                self._cap.release()
         self._cap = None
         if self._face_detector:
             self._face_detector.close()
@@ -230,28 +256,49 @@ class CameraService:
         except Exception:
             log.warning("Failed to create gesture recognizer", exc_info=True)
 
-        cap = cv2.VideoCapture(self._camera_idx)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, settings.camera_width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.camera_height)
-        self._cap = cap
+        if self._camera_type == "rpi" and _HAS_PICAMERA:
+            picam2 = Picamera2()
+            cfg = picam2.create_preview_configuration(
+                {"size": (settings.camera_width, settings.camera_height)}
+            )
+            picam2.configure(cfg)
+            picam2.start()
+            log.info("Picamera2 started: %dx%d", settings.camera_width, settings.camera_height)
+            self._cap = picam2
 
-        log.info("Camera %d opened: %s", self._camera_idx, cap.isOpened())
+            while self._running:
+                frame_rgb = picam2.capture_array()
+                self._last_frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
 
-        while self._running:
-            ret, frame = cap.read()
-            if not ret:
-                self._running = False
-                break
+                self._process_faces(mp_image)
+                self._process_gestures(mp_image)
 
-            self._last_frame_bgr = frame
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            picam2.stop()
+            log.info("Picamera2 loop ended")
+        else:
+            cap = cv2.VideoCapture(self._camera_idx)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, settings.camera_width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.camera_height)
+            self._cap = cap
 
-            self._process_faces(mp_image)
-            self._process_gestures(mp_image)
+            log.info("Camera %d opened: %s", self._camera_idx, cap.isOpened())
 
-        cap.release()
-        log.info("Camera loop ended")
+            while self._running:
+                ret, frame = cap.read()
+                if not ret:
+                    self._running = False
+                    break
+
+                self._last_frame_bgr = frame
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+                self._process_faces(mp_image)
+                self._process_gestures(mp_image)
+
+            cap.release()
+            log.info("Camera loop ended")
 
     def _process_faces(self, mp_image: mp.Image) -> None:
         if self._face_detector is None:
@@ -270,6 +317,9 @@ class CameraService:
                     self._face_hit_streak = 3 if self._person_seen_during_settle else 0
                     self._face_miss_streak = 0
                     log.info("Camera settle done: person_present=%s", self._person_present)
+                    if self._person_present:
+                        name = self._recognize_face()
+                        self._emit("person_appeared", {"name": name} if name else {})
                 return
 
             if faces_detected:

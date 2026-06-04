@@ -10,11 +10,19 @@ from virtual_assistant_be.api.routes.telegram import router as telegram_router
 import logging
 from rich.logging import RichHandler
 
+main_logging_formatter = logging.Formatter(
+        "[%(asctime)s] %(levelname)-8s %(name)s:%(filename)s:%(funcName)s[%(lineno)d] - %(message)s",
+        datefmt="[%Y/%m/%d %H:%M:%S]",
+    )
+file_handler = logging.FileHandler("app.log", mode="w")
+file_handler.setFormatter(main_logging_formatter)
+
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(name)s:%(filename)s:%(funcName)s[%(lineno)d] - %(message)s",
-    datefmt="[%Y/%m/%d %H:%M:%S]",
-    handlers=[RichHandler(rich_tracebacks=True, tracebacks_show_locals=True)]
+    handlers=[
+        file_handler,
+        RichHandler(rich_tracebacks=True, tracebacks_show_locals=True)
+    ]
 )
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 

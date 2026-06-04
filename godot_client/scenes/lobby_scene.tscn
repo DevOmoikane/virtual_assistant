@@ -1,8 +1,9 @@
 [gd_scene format=3 uid="uid://c1dqqk0pnvax1"]
 
-[ext_resource type="PackedScene" path="res://assets/characters/carlitos.scn" id="1_4tn4g"]
+[ext_resource type="PackedScene" uid="uid://dikrjhcnmb77u" path="res://assets/characters/carlitos.scn" id="1_4tn4g"]
 [ext_resource type="Script" uid="uid://dafgm86wolfa" path="res://scripts/lobby_scene.gd" id="1_g76d4"]
 [ext_resource type="Script" uid="uid://cwxhpoutcafpk" path="res://scripts/websocket.gd" id="2_g76d4"]
+[ext_resource type="PackedScene" uid="uid://b22m6o5nxach3" path="res://scenes/debug_overlay.tscn" id="3_g76d4"]
 [ext_resource type="Material" uid="uid://c8jnhnmkd4emq" path="res://shaders/materials/circle_sweep_shader_material.tres" id="4_d4cga"]
 
 [sub_resource type="Environment" id="Environment_d4cga"]
@@ -27,8 +28,11 @@ environment = SubResource("Environment_d4cga")
 
 [node name="websocket" type="Node" parent="." unique_id=1824585638]
 script = ExtResource("2_g76d4")
+websocket_url = "ws://localhost:7700/api/ws"
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=392157064]
 transform = Transform3D(1, 0, 0, 0, 0.02726537, 0, 0, 0, 1, 0, -0.019797564, 0)
 mesh = SubResource("CylinderMesh_qyrwf")
 surface_material_override/0 = ExtResource("4_d4cga")
+
+[node name="DebugOverlay" parent="." unique_id=672280443 instance=ExtResource("3_g76d4")]
