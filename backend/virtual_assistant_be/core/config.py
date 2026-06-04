@@ -61,6 +61,10 @@ class Settings:
     piper_default_language: str = "en"
     piper_voices: dict[str, str] | None = None
 
+    platform_camera: str = "auto"
+    platform_audio_input: str | None = None
+    platform_audio_output: str | None = None
+
     camera_device_id: int | None = None
     camera_width: int = 640
     camera_height: int = 480
@@ -122,6 +126,12 @@ class Settings:
             self.piper_voices = {
                 "en": os.path.expanduser("./tools/piper/en_US-lessac-medium.onnx"),
             }
+
+        platform = cfg.get("platform", {})
+        self.platform_camera = platform.get("camera", self.platform_camera)
+        audio_cfg = platform.get("audio", {})
+        self.platform_audio_input = audio_cfg.get("input_device", self.platform_audio_input)
+        self.platform_audio_output = audio_cfg.get("output_device", self.platform_audio_output)
 
         camera = cfg.get("camera", {})
         self.camera_device_id = camera.get("device_id", self.camera_device_id)

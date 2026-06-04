@@ -77,6 +77,36 @@ from virtual_assistant_be.pipecat.supertonic_tts import SupertonicTTSService
 log = logging.getLogger(__name__)
 
 
+def _is_rpi() -> bool:
+    try:
+        from picamera2 import Picamera2  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _find_pyaudio_device(substring: str | None, is_input: bool) -> int | None:
+    if substring is None:
+        return None
+    import pyaudio
+    p = pyaudio.PyAudio()
+    try:
+        needle = substring.lower()
+        for i in range(p.get_device_count()):
+            info = p.get_device_info_by_index(i)
+            name = info.get("name", "").lower()
+            if needle not in name:
+                continue
+            channels = info.get("maxInputChannels" if is_input else "maxOutputChannels", 0)
+            if channels > 0:
+                log.info("Matched PyAudio device %d (%s): %s", i, "in" if is_input else "out", info["name"])
+                return i
+        log.info("No PyAudio device matched substring '%s' for %s", substring, "input" if is_input else "output")
+        return None
+    finally:
+        p.terminate()
+
+
 class PipecatOrchestrator:
     def __init__(self, send_fn: SendFn | None = None) -> None:
         self._send_fn: SendFn | None = send_fn
@@ -216,10 +246,20 @@ class PipecatOrchestrator:
                 sample_rate=24000,
             )
 
+        audio_in_idx = _find_pyaudio_device(settings.platform_audio_input, is_input=True)
+        if audio_in_idx is None and _is_rpi():
+            audio_in_idx = _find_pyaudio_device("wm8960", is_input=True)
+
+        audio_out_idx = _find_pyaudio_device(settings.platform_audio_output, is_input=False)
+        if audio_out_idx is None and _is_rpi():
+            audio_out_idx = _find_pyaudio_device("wm8960", is_input=False)
+
         self._transport = LocalAudioTransport(
             LocalAudioTransportParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
+                input_device_index=audio_in_idx,
+                output_device_index=audio_out_idx,
             )
         )
 

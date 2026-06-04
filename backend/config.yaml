@@ -17,6 +17,12 @@ mcp:
       env:
         API_ACCESS_TOKEN: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI0OGY4YWQ5NmUwNjY0YjkyODY4YjAwNjJiODZjMzI1MyIsImlhdCI6MTc4MDA5NzU5OSwiZXhwIjoyMDk1NDU3NTk5fQ.PvWTs7V1l8rPYIEYW0km6poCBTexwz3s1j598hWcgec"
 
+platform:
+  camera: auto  # auto, usb, rpi
+  audio:
+    input_device: null  # null=auto, or device name substring like "wm8960"
+    output_device: null
+
 camera:
   device_id: null
   height: 480
