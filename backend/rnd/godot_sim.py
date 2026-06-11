@@ -4,6 +4,7 @@ Godot Simulator — TUI dashboard that replaces the Godot client for development
 
 Usage:
   uv run python rnd/godot_sim.py
+  uv run python rnd/godot_sim.py --host 192.168.1.100 --port 7700 --timeout 15
 
 Commands (type at the prompt):
   /text <msg>   send text to the assistant
@@ -14,6 +15,7 @@ Commands (type at the prompt):
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import shutil
@@ -28,7 +30,14 @@ except ImportError:
     print("  uv run python rnd/godot_sim.py")
     sys.exit(1)
 
-WS_URL = "ws://localhost:7700/api/ws"
+parser = argparse.ArgumentParser(description="Godot Simulator TUI")
+parser.add_argument("--host", default="localhost", help="Backend server host (default: localhost)")
+parser.add_argument("--port", type=int, default=7700, help="Backend server port (default: 7700)")
+parser.add_argument("--timeout", type=float, default=10.0, help="WebSocket connect timeout in seconds (default: 10)")
+_args = parser.parse_args()
+
+WS_URL = f"ws://{_args.host}:{_args.port}/api/ws"
+WS_TIMEOUT = _args.timeout
 
 # ── ANSI ──────────────────────────────────────────────────
 C = {
@@ -264,33 +273,42 @@ async def main() -> None:
 
         _redraw()
 
+        connect_mgr = websockets.connect(WS_URL)
         try:
-            async with websockets.connect(WS_URL) as ws:
-                ready = json.dumps({"type": "command", "name": "ready"})
-                await ws.send(ready)
-                state.connected = True
-                _log("connected, sent ready")
-                _redraw()
-
-                recv_task = asyncio.create_task(receive_loop(ws))
-                send_task = asyncio.create_task(send_loop(ws))
-
-                done, pending = await asyncio.wait(
-                    [recv_task, send_task],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-
-                for task in pending:
-                    task.cancel()
-
-        except websockets.exceptions.ConnectionClosed:
-            state.connected = False
-            _log(f"{C['red']}connection closed{C['reset']}")
-            _redraw()
+            ws = await asyncio.wait_for(connect_mgr.__aenter__(), timeout=WS_TIMEOUT)
+        except TimeoutError:
+            sys.stdout.write(C["clear_screen"])
+            print(f"{C['red']}connection timed out after {WS_TIMEOUT}s{C['reset']}")
+            print(f"  is the backend running at {WS_URL}?")
+            return
         except OSError as e:
             sys.stdout.write(C["clear_screen"])
             print(f"{C['red']}connection failed:{C['reset']} {e}")
             print(f"  is the backend running at {WS_URL}?")
+
+        try:
+            ready = json.dumps({"type": "command", "name": "ready"})
+            await ws.send(ready)
+            state.connected = True
+            _log("connected, sent ready")
+            _redraw()
+
+            recv_task = asyncio.create_task(receive_loop(ws))
+            send_task = asyncio.create_task(send_loop(ws))
+
+            done, pending = await asyncio.wait(
+                [recv_task, send_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for task in pending:
+                task.cancel()
+        except websockets.exceptions.ConnectionClosed:
+            state.connected = False
+            _log(f"{C['red']}connection closed{C['reset']}")
+            _redraw()
+        finally:
+            await connect_mgr.__aexit__(None, None, None)
     finally:
         sys.stdout.write(C["show_cursor"])
         sys.stdout.write("\n")
